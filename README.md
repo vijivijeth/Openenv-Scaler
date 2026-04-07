@@ -27,6 +27,15 @@ These mechanics create meaningful reward signals that genuinely differentiate
 intelligent agents from random action agents.
 
 ---
+title: OpenEnv SRE ResponseGym
+emoji: 🏋️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+
+---
 
 ## Tasks
 
