@@ -1,4 +1,14 @@
-# SRE-ResponseGym
+---
+title: OpenEnv SRE ResponseGym
+emoji: 🏋️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
+# OpenEnv SRE-ResponseGym
 
 **AI Incident Response Benchmark — OpenEnv Compatible**
 
@@ -26,16 +36,6 @@ Real SRE engineers face exactly these decisions daily. The environment models:
 These mechanics create meaningful reward signals that genuinely differentiate 
 intelligent agents from random action agents.
 
----
-title: OpenEnv SRE ResponseGym
-emoji: 🏋️
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
-
----
 
 ## Tasks
 
