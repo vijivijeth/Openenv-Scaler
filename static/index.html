@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRE-ResponseGym</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#0a0d14;color:#e1e4e8;min-height:100vh}
+
+header{background:#0d1117;border-bottom:1px solid #21262d;padding:14px 32px;display:flex;align-items:center;gap:14px}
+.logo{width:38px;height:38px;background:linear-gradient(135deg,#f85149,#ff7c00);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.h-title{font-size:18px;font-weight:600;color:#f0f6fc}
+.h-sub{font-size:11px;color:#6e7681;margin-top:1px}
+.h-badges{margin-left:auto;display:flex;gap:8px;align-items:center}
+.hbadge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.hb-blue{background:#1f6feb22;color:#58a6ff;border:1px solid #1f6feb55}
+.hb-green{background:#23863622;color:#3fb950;border:1px solid #23863655}
+.hb-orange{background:#d9792222;color:#ff9500;border:1px solid #d9792255}
+
+.hero{background:linear-gradient(180deg,#0d1117 0%,#0a0d14 100%);border-bottom:1px solid #21262d;padding:28px 32px 24px}
+.hero-inner{max-width:1200px;margin:0 auto;display:flex;align-items:flex-start;gap:40px}
+.hero-text{flex:1}
+.hero-title{font-size:26px;font-weight:700;color:#f0f6fc;line-height:1.3}
+.hero-title span{background:linear-gradient(90deg,#f85149,#ff9500);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-desc{font-size:13px;color:#8b949e;margin-top:8px;line-height:1.6;max-width:560px}
+.hero-tags{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.htag{padding:4px 12px;border-radius:20px;font-size:11px;font-weight:500;background:#21262d;color:#8b949e;border:1px solid #30363d}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;min-width:380px}
+.hstat{background:#161b22;border:1px solid #21262d;border-radius:10px;padding:14px 16px;text-align:center}
+.hstat-val{font-size:24px;font-weight:700;color:#f0f6fc}
+.hstat-label{font-size:10px;color:#6e7681;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+
+.main{max-width:1200px;margin:0 auto;padding:24px 32px;display:grid;grid-template-columns:300px 1fr;gap:20px}
+
+.panel{background:#0d1117;border:1px solid #21262d;border-radius:12px;padding:18px;margin-bottom:14px}
+.ptitle{font-size:10px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;display:flex;align-items:center;gap:6px}
+
+.task-card{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:all .15s;position:relative}
+.task-card:hover{border-color:#388bfd55;background:#1c2333}
+.task-card.active{border-color:#388bfd;background:#1c2333}
+.task-card.active::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#388bfd;border-radius:3px 0 0 3px}
+.tc-header{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.tc-name{font-size:13px;font-weight:500;color:#f0f6fc;flex:1}
+.diff-pill{font-size:9px;padding:2px 7px;border-radius:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.dp-easy{background:#1a473188;color:#3fb950;border:1px solid #3fb95044}
+.dp-medium{background:#3d2b0088;color:#d29922;border:1px solid #d2992244}
+.dp-hard{background:#3d1a1a88;color:#f85149;border:1px solid #f8514944}
+.dp-expert{background:#2d1f4a88;color:#a371f7;border:1px solid #a371f744}
+.dp-extreme{background:#1a2d3d88;color:#39d0d8;border:1px solid #39d0d844}
+.tc-desc{font-size:11px;color:#6e7681;line-height:1.4}
+.tc-score{margin-top:8px}
+.score-bar-bg{height:4px;background:#21262d;border-radius:2px;overflow:hidden}
+.score-bar-fill{height:100%;border-radius:2px;transition:width .8s ease;width:0%}
+.sbf-easy{background:#3fb950}
+.sbf-medium{background:#d29922}
+.sbf-hard{background:#f85149}
+.sbf-expert{background:#a371f7}
+.sbf-extreme{background:#39d0d8}
+.tc-score-val{font-size:10px;color:#6e7681;margin-top:3px}
+
+.btn{width:100%;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-green{background:#238636;color:#fff}
+.btn-green:hover{background:#2ea043}
+.btn-orange{background:#9a3412;color:#fff;border:1px solid #c2410c44}
+.btn-orange:hover{background:#b45309}
+.btn-blue{background:#1f6feb;color:#fff}
+.btn-blue:hover{background:#388bfd}
+.btn:disabled{background:#161b22;color:#484f58;cursor:not-allowed;border:1px solid #21262d}
+
+.action-wrap{position:relative;margin-bottom:8px}
+.action-input{width:100%;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 13px 10px 36px;color:#e1e4e8;font-size:12px;font-family:'Consolas',monospace}
+.action-input:focus{outline:none;border-color:#388bfd}
+.action-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6e7681;font-size:13px}
+.action-hints{display:flex;flex-direction:column;gap:3px;margin-top:4px}
+.ah{font-size:10px;color:#484f58;font-family:monospace;cursor:pointer;padding:2px 4px;border-radius:3px;transition:color .1s}
+.ah:hover{color:#8b949e}
+
+.svc-row{display:flex;align-items:center;gap:10px;padding:9px 12px;background:#161b22;border-radius:7px;margin-bottom:6px}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.d-healthy{background:#3fb950;box-shadow:0 0 5px #3fb95066}
+.d-degraded{background:#d29922;box-shadow:0 0 5px #d2992266}
+.d-down{background:#f85149;box-shadow:0 0 5px #f8514966}
+.d-unreachable{background:#a371f7;box-shadow:0 0 5px #a371f766}
+.d-locked{background:#484f58}
+.svc-name{font-size:12px;flex:1;color:#e1e4e8}
+.svc-tag{font-size:9px;padding:2px 7px;border-radius:10px;font-weight:500;text-transform:uppercase}
+.st-healthy{background:#1a4731;color:#3fb950}
+.st-degraded{background:#3d2b00;color:#d29922}
+.st-down{background:#3d1a1a;color:#f85149}
+.st-unreachable{background:#2d1f4a;color:#a371f7}
+.st-locked{background:#21262d;color:#6e7681}
+
+.alert-row{padding:9px 12px;border-radius:7px;margin-bottom:6px;font-size:11px;line-height:1.5}
+.ar-critical{background:#3d1a1a;border:1px solid #f8514933;color:#ffa198}
+.ar-warning{background:#3d2b00;border:1px solid #d2992233;color:#e3b341}
+.ar-sev{font-size:9px;font-weight:700;text-transform:uppercase;margin-right:6px;letter-spacing:.04em}
+
+.log-box{background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 14px;font-family:'Consolas',monospace;font-size:11px;color:#6e7681;height:150px;overflow-y:auto;line-height:1.8}
+.ls{color:#388bfd}.le{color:#f85149}.lw{color:#d29922}.lok{color:#3fb950}
+
+.trace-box{background:#010409;border:1px solid #21262d;border-radius:8px;padding:12px 14px;font-family:'Consolas',monospace;font-size:11px;height:200px;overflow-y:auto;line-height:2}
+.tr-start{color:#388bfd;font-weight:600}
+.tr-pos{color:#3fb950}
+.tr-neg{color:#f85149}
+.tr-neutral{color:#6e7681}
+.tr-end-ok{color:#3fb950;font-weight:700}
+.tr-end-fail{color:#f85149;font-weight:700}
+
+.grade-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.gc{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px;text-align:center}
+.gc-val{font-size:22px;font-weight:700;color:#f0f6fc;transition:color .3s}
+.gc-val.good{color:#3fb950}.gc-val.ok{color:#d29922}.gc-val.bad{color:#f85149}
+.gc-label{font-size:9px;color:#6e7681;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+
+.mission-box{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:14px;margin-bottom:14px}
+.mb-title{font-size:11px;font-weight:600;color:#f0f6fc;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.mb-desc{font-size:12px;color:#8b949e;line-height:1.6}
+
+.empty{color:#484f58;font-size:11px;text-align:center;padding:14px}
+.pulse{animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.right-col{display:flex;flex-direction:column;gap:0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🔧</div>
+  <div>
+    <div class="h-title">SRE-ResponseGym</div>
+    <div class="h-sub">AI Incident Response Benchmark Environment</div>
+  </div>
+  <div class="h-badges">
+    <span class="hbadge hb-blue">OpenEnv 1.0</span>
+    <span class="hbadge hb-orange">6 Tasks</span>
+    <span class="hbadge hb-green" id="liveTag">● LIVE</span>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-text">
+      <div class="hero-title">Site Reliability Engineering<br><span>Incident Response RL</span></div>
+      <div class="hero-desc">Train and evaluate AI agents on realistic production incidents. From simple crashes to multi-region meltdowns — agents must read logs, trace root causes, and remediate without causing further damage.</div>
+      <div class="hero-tags">
+        <span class="htag">🏭 Real SRE Domain</span>
+        <span class="htag">⚡ Trap Mechanics</span>
+        <span class="htag">📊 3-Axis Grader</span>
+        <span class="htag">🔄 Rollback Scenarios</span>
+        <span class="htag">🌐 Multi-Region Failures</span>
+        <span class="htag">⚙️ Circuit Breakers</span>
+      </div>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><div class="hstat-val">6</div><div class="hstat-label">Tasks</div></div>
+      <div class="hstat"><div class="hstat-val" id="statStep">0</div><div class="hstat-label">Current Step</div></div>
+      <div class="hstat"><div class="hstat-val" id="statReward">0.00</div><div class="hstat-label">Episode Reward</div></div>
+      <div class="hstat"><div class="hstat-val" id="statStatus" style="font-size:14px;padding-top:4px">Ready</div><div class="hstat-label">Status</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- LEFT -->
+  <div>
+    <div class="panel">
+      <div class="ptitle">📋 Benchmark Tasks</div>
+      <div id="taskList"></div>
+      <button class="btn btn-green" onclick="resetEnv()">▶ Start Episode</button>
+      <button class="btn btn-orange" id="agentBtn" onclick="runBaselineAgent()">🤖 Run Baseline Agent</button>
+      <button class="btn" id="benchmarkBtn" onclick="runBenchmark()" style="background:#1f3a5f;color:#58a6ff;border:1px solid #1f6feb44">📊 Run Full Benchmark</button>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">⚡ Take Action</div>
+      <div class="action-wrap">
+        <span class="action-icon">$</span>
+        <input class="action-input" id="actionInput" placeholder="restart_service auth-api"/>
+      </div>
+      <button class="btn btn-blue" onclick="sendAction()">Execute Action →</button>
+      <div class="action-hints">
+        <div class="ah" onclick="setAction('restart_service ')">restart_service &lt;name&gt;</div>
+        <div class="ah" onclick="setAction('check_logs ')">check_logs &lt;name&gt;</div>
+        <div class="ah" onclick="setAction('query_runbook ')">query_runbook &lt;keyword&gt;</div>
+        <div class="ah" onclick="setAction('rollback_deploy ')">rollback_deploy &lt;name&gt; &lt;ver&gt;</div>
+        <div class="ah" onclick="setAction('isolate_az ')">isolate_az &lt;zone&gt;</div>
+        <div class="ah" onclick="setAction('failover_db ')">failover_db &lt;name&gt;</div>
+        <div class="ah" onclick="setAction('reset_circuit_breaker ')">reset_circuit_breaker &lt;name&gt;</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-col">
+
+    <div class="panel" id="missionPanel" style="display:none">
+      <div class="ptitle">🎯 Mission Brief</div>
+      <div class="mission-box">
+        <div class="mb-title" id="missionTitle">—</div>
+        <div class="mb-desc" id="missionDesc">—</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">🖥️ Services</div>
+      <div id="services"><div class="empty">Start an episode to see live service states</div></div>
+      <div class="ptitle" style="margin-top:14px">🚨 Active Alerts</div>
+      <div id="alerts"><div class="empty">No alerts</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">📄 System Logs</div>
+      <div class="log-box" id="logs"><span style="color:#484f58">Waiting for episode to start...</span></div>
+    </div>
+
+    <div class="panel">
+      <div class="ptitle">📡 Episode Trace</div>
+      <div class="trace-box" id="trace"><span style="color:#484f58">Actions will stream here in real time...</span></div>
+      <div class="grade-grid" id="gradeGrid" style="display:none">
+        <div class="gc"><div class="gc-val" id="gRes">—</div><div class="gc-label">Resolution</div></div>
+        <div class="gc"><div class="gc-val" id="gEff">—</div><div class="gc-label">Efficiency</div></div>
+        <div class="gc"><div class="gc-val" id="gRoot">—</div><div class="gc-label">Root Cause</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const TASKS = [
+  {id:'task_easy',name:'Service Crash',diff:'easy',desc:'Single service down. Identify the crashed process and restart it.'},
+  {id:'task_medium',name:'Cascade Failure',diff:'medium',desc:'Database overload cascading to auth and frontend. Wrong first action penalized.'},
+  {id:'task_hard',name:'Bad Deployment',diff:'hard',desc:'Memory leak from bad deploy. Restart will always fail — rollback required.'},
+  {id:'task_expert',name:'Dependency Chain',diff:'expert',desc:'Multi-service outage. Services must be restored in correct dependency order.'},
+  {id:'task_trap',name:'Network Partition',diff:'expert',desc:'Split-brain detected. Restarting causes data corruption. Isolate AZ first.'},
+  {id:'task_extreme',name:'Platform Meltdown',diff:'extreme',desc:'Three independent root causes. Circuit breaker tripped. Full diagnosis required.'}
+];
+
+const AGENT_SEQUENCES = {
+  task_easy:['check_logs auth-api','restart_service auth-api'],
+  task_medium:['check_logs auth-api','restart_service auth-api','check_logs database','restart_service database','check_logs web-frontend','restart_service web-frontend','restart_service auth-api'],
+  task_hard:['check_logs payment-service','rollback_deploy payment-service v3.2.0'],
+  task_expert:['check_logs user-service','restart_service user-service','check_logs order-service','restart_service order-service','restart_service edge-gateway'],
+  task_trap:['query_runbook split-brain','isolate_az us-east-1a','failover_db database-primary','restart_service user-service','restart_service payment-gateway'],
+  task_extreme:['check_logs user-service','query_runbook OOMKilled','rollback_deploy user-service v4.0.8','check_logs payment-service','rollback_deploy payment-service v2.3.0','reset_circuit_breaker edge-gateway']
+};
+
+let selectedTask = 'task_easy';
+let stepCount = 0;
+let totalReward = 0;
+let episodeActive = false;
+let agentRunning = false;
+
+function buildTaskList() {
+  const el = document.getElementById('taskList');
+  el.innerHTML = TASKS.map((t,i) => `
+    <div class="task-card ${i===0?'active':''}" onclick="selectTask('${t.id}',this)" id="tc-${t.id}">
+      <div class="tc-header">
+        <span class="tc-name">${t.name}</span>
+        <span class="diff-pill dp-${t.diff}">${t.diff}</span>
+      </div>
+      <div class="tc-desc">${t.desc}</div>
+      <div class="tc-score">
+        <div class="score-bar-bg"><div class="score-bar-fill sbf-${t.diff}" id="bar-${t.id}"></div></div>
+        <div class="tc-score-val" id="barval-${t.id}">Not yet run</div>
+      </div>
+    </div>`).join('');
+}
+
+function selectTask(id, el) {
+  selectedTask = id;
+  document.querySelectorAll('.task-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  const t = TASKS.find(x => x.id === id);
+  if (t) {
+    document.getElementById('missionPanel').style.display = 'block';
+    document.getElementById('missionTitle').textContent = `${t.name} — ${t.diff.toUpperCase()}`;
+    document.getElementById('missionDesc').textContent = t.desc;
+  }
+}
+
+function setAction(a) {
+  const inp = document.getElementById('actionInput');
+  inp.value = a;
+  inp.focus();
+}
+
+async function resetEnv() {
+  stepCount = 0; totalReward = 0; episodeActive = true;
+  document.getElementById('gradeGrid').style.display = 'none';
+  document.getElementById('trace').innerHTML = '';
+  document.getElementById('statStep').textContent = '0';
+  document.getElementById('statReward').textContent = '0.00';
+  document.getElementById('statStatus').textContent = 'Running';
+  document.getElementById('missionPanel').style.display = 'block';
+  const t = TASKS.find(x => x.id === selectedTask);
+  if (t) {
+    document.getElementById('missionTitle').textContent = `${t.name} — ${t.diff.toUpperCase()}`;
+    document.getElementById('missionDesc').textContent = t.desc;
+  }
+  const res = await fetch('/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_id:selectedTask})});
+  const data = await res.json();
+  renderObs(data.observation);
+  appendTrace(`<span class="tr-start">[START] task=${selectedTask}</span>`);
+}
+
+async function sendAction() {
+  const action = document.getElementById('actionInput').value.trim();
+  if (!action || !episodeActive) return;
+  await doStep(action);
+  document.getElementById('actionInput').value = '';
+}
+
+async function doStep(action) {
+  const res = await fetch('/step',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action})});
+  const data = await res.json();
+  stepCount++; totalReward += data.reward;
+  renderObs(data.observation);
+  document.getElementById('statStep').textContent = stepCount;
+  document.getElementById('statReward').textContent = totalReward.toFixed(2);
+  const cls = data.reward > 0 ? 'tr-pos' : data.reward < 0 ? 'tr-neg' : 'tr-neutral';
+  appendTrace(`<span class="${cls}">[STEP] step=${stepCount} action=${action} reward=${data.reward.toFixed(2)} done=${data.done}</span>`);
+  if (data.done) { episodeActive = false; await showGrade(); }
+  return data.done;
+}
+
+async function runBaselineAgent() {
+  if (agentRunning) return;
+  agentRunning = true;
+  document.getElementById('agentBtn').disabled = true;
+  document.getElementById('agentBtn').textContent = '⏳ Agent running...';
+  document.getElementById('trace').innerHTML = '';
+  document.getElementById('gradeGrid').style.display = 'none';
+
+  for (let i = 0; i < TASKS.length; i++) {
+    const task = TASKS[i];
+    selectedTask = task.id;
+    document.querySelectorAll('.task-card').forEach(c => c.classList.remove('active'));
+    document.getElementById('tc-'+task.id).classList.add('active');
+    document.getElementById('missionPanel').style.display = 'block';
+    document.getElementById('missionTitle').textContent = `${task.name} — ${task.diff.toUpperCase()}`;
+    document.getElementById('missionDesc').textContent = task.desc;
+    document.getElementById('statStatus').textContent = task.name;
+
+    await new Promise(r => setTimeout(r, 300));
+    stepCount = 0; totalReward = 0; episodeActive = true;
+    document.getElementById('statStep').textContent = '0';
+    document.getElementById('statReward').textContent = '0.00';
+
+    const obs = await (await fetch('/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_id:task.id})})).json();
+    renderObs(obs.observation);
+    appendTrace(`<span class="tr-start">── [START] ${task.name} (${task.diff}) ──</span>`);
+
+    const actions = AGENT_SEQUENCES[task.id] || [];
+    for (const action of actions) {
+      await new Promise(r => setTimeout(r, 800));
+      const done = await doStep(action);
+      if (done) break;
+    }
+
+    const g = await (await fetch('/grade')).json();
+    const score = g.final_score;
+    document.getElementById('bar-'+task.id).style.width = (score*100)+'%';
+    document.getElementById('barval-'+task.id).textContent = `Score: ${(score*100).toFixed(0)}%`;
+    appendTrace(`<span class="${score>=0.5?'tr-end-ok':'tr-end-fail'}">[END] ${task.id} final_score=${score.toFixed(3)}</span>`);
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  document.getElementById('statStatus').textContent = 'Done ✓';
+  document.getElementById('agentBtn').disabled = false;
+  document.getElementById('agentBtn').textContent = '🤖 Run Baseline Agent';
+  agentRunning = false;
+}
+
+function renderObs(obs) {
+  document.getElementById('services').innerHTML = Object.entries(obs.services).map(([n,s])=>`
+    <div class="svc-row">
+      <div class="dot d-${s.replace('-','').replace(' ','')}"></div>
+      <div class="svc-name">${n}</div>
+      <span class="svc-tag st-${s}">${s}</span>
+    </div>`).join('');
+
+  const al = document.getElementById('alerts');
+  al.innerHTML = !obs.alerts||obs.alerts.length===0
+    ? '<div class="empty">✓ No active alerts</div>'
+    : obs.alerts.map(a=>`<div class="alert-row ar-${a.severity}"><span class="ar-sev">${a.severity}</span>${a.message}</div>`).join('');
+
+  const lb = document.getElementById('logs');
+  lb.innerHTML = obs.logs.map(l=>{
+    if(l.includes('[SYSTEM]')) return `<div class="lok">${l}</div>`;
+    if(l.includes('OOMKill')||l.includes('failed')||l.includes('error')||l.includes('crash')) return `<div class="le">${l}</div>`;
+    if(l.includes('timeout')||l.includes('latency')||l.includes('warning')||l.includes('degraded')) return `<div class="lw">${l}</div>`;
+    if(l.includes('runbook')||l.includes('dependency')) return `<div class="ls">${l}</div>`;
+    return `<div>${l}</div>`;
+  }).join('');
+  lb.scrollTop = lb.scrollHeight;
+}
+
+async function showGrade() {
+  const g = await (await fetch('/grade')).json();
+  const ok = g.final_score >= 0.5;
+  appendTrace(`<span class="${ok?'tr-end-ok':'tr-end-fail'}">[END] success=${ok} score=${g.final_score.toFixed(3)}</span>`);
+  document.getElementById('gradeGrid').style.display = 'grid';
+  const set = (id,val) => {
+    const el = document.getElementById(id);
+    el.textContent = val.toFixed(2);
+    el.className = 'gc-val '+(val>=0.7?'good':val>=0.4?'ok':'bad');
+  };
+  set('gRes',g.breakdown.resolution);
+  set('gEff',g.breakdown.efficiency);
+  set('gRoot',g.breakdown.root_cause_accuracy);
+}
+
+function appendTrace(html) {
+  const b = document.getElementById('trace');
+  b.innerHTML += `<div>${html}</div>`;
+  b.scrollTop = b.scrollHeight;
+}
+
+document.getElementById('actionInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter') sendAction();
+});
+
+buildTaskList();
+
+// Load history and update sparklines
+async function loadHistory() {
+  try {
+    const r = await fetch('/history');
+    const data = await r.json();
+    if (data.total_episodes === 0) return;
+
+    // Update sparklines per task
+    for (const task of TASKS) {
+      const episodes = data.by_task[task.id] || [];
+      if (episodes.length === 0) continue;
+      const latest = episodes[episodes.length - 1];
+      document.getElementById('bar-'+task.id).style.width =
+        (latest.score * 100) + '%';
+      document.getElementById('barval-'+task.id).textContent =
+        `Best: ${(latest.score * 100).toFixed(0)}% (${episodes.length} runs)`;
+    }
+  } catch(e) {}
+}
+
+// Run full benchmark
+async function runBenchmark() {
+  const btn = document.getElementById('benchmarkBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running benchmark...';
+
+  try {
+    const r = await fetch('/benchmark', {method:'POST'});
+    const data = await r.json();
+
+    appendTrace(`<span class="tr-start">── BENCHMARK REPORT ──</span>`);
+    for (const result of data.results) {
+      const cls = result.score >= 0.75 ? 'tr-pos' :
+                  result.score >= 0.5 ? 'tr-neutral' : 'tr-neg';
+      appendTrace(`<span class="${cls}">${result.task_id}: ${result.score.toFixed(3)} [${result.letter_grade}]</span>`);
+      document.getElementById('bar-'+result.task_id).style.width =
+        (result.score * 100) + '%';
+      document.getElementById('barval-'+result.task_id).textContent =
+        `Score: ${(result.score * 100).toFixed(0)}% [${result.letter_grade}]`;
+    }
+    appendTrace(`<span class="tr-end-ok">── AVERAGE: ${data.average_score.toFixed(3)} [${data.overall_grade}] ──</span>`);
+    document.getElementById('statStatus').textContent =
+      `Benchmark: ${data.overall_grade}`;
+  } catch(e) {
+    appendTrace(`<span class="tr-neg">Benchmark failed: ${e}</span>`);
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📊 Run Full Benchmark';
+}
+
+loadHistory();
+setInterval(loadHistory, 30000);
+
+</script>
+</body>
+</html>

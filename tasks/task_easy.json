@@ -1,0 +1,32 @@
+{
+    "task_id": "task_easy",
+    "difficulty": "easy",
+    "description": "A single service has crashed. Identify it and restart it.",
+    "initial_state": {
+        "services": {
+            "auth-api": "down",
+            "database": "healthy",
+            "web-frontend": "healthy"
+        },
+        "alerts": [
+            {
+                "id": 1,
+                "severity": "critical",
+                "message": "auth-api is not responding to health checks"
+            }
+        ],
+        "logs": [
+            "auth-api process exited with code 137",
+            "auth-api failed to start: port 8080 already in use",
+            "No downstream errors detected in database or web-frontend"
+        ],
+        "step_count": 0
+    },
+    "max_steps": 5,
+    "correct_root_cause": "auth-api",
+    "solution_actions": ["restart_service auth-api"],
+    "win_condition": {
+        "all_services": ["auth-api", "database", "web-frontend"],
+        "required_status": "healthy"
+    }
+}

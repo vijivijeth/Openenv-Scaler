@@ -1,0 +1,68 @@
+{
+    "task_id": "task_expert",
+    "difficulty": "expert",
+    "description": "A cascading multi-region failure. Services must be restored in the correct dependency order or data loss occurs.",
+    "initial_state": {
+        "services": {
+            "edge-gateway": "down",
+            "user-service": "down",
+            "order-service": "down",
+            "inventory-service": "degraded",
+            "database-primary": "healthy",
+            "database-replica": "healthy"
+        },
+        "alerts": [
+            {
+                "id": 1,
+                "severity": "critical",
+                "message": "edge-gateway is rejecting all incoming traffic"
+            },
+            {
+                "id": 2,
+                "severity": "critical",
+                "message": "user-service cannot reach order-service"
+            },
+            {
+                "id": 3,
+                "severity": "critical",
+                "message": "order-service dependency on user-service is unresolved"
+            },
+            {
+                "id": 4,
+                "severity": "warning",
+                "message": "inventory-service reporting degraded cache hits"
+            }
+        ],
+        "logs": [
+            "edge-gateway: upstream user-service not reachable, dropping requests",
+            "user-service: failed to connect to order-service on port 8082",
+            "order-service: waiting for user-service auth token, timeout after 5s",
+            "order-service: cannot start without user-service being healthy first",
+            "inventory-service: cache miss rate at 78%, falling back to database",
+            "dependency-map: correct restore order is user-service → order-service → edge-gateway"
+        ],
+        "step_count": 0
+    },
+    "max_steps": 12,
+    "correct_root_cause": "user-service",
+    "solution_actions": [
+        "check_logs user-service",
+        "restart_service user-service",
+        "check_logs order-service",
+        "restart_service order-service",
+        "restart_service edge-gateway"
+    ],
+    "trap": {
+        "wrong_first_action": "restart_service edge-gateway",
+        "consequence": "edge-gateway restarted but crashes again — upstream dependencies still down",
+        "penalty": -0.3
+    },
+    "win_condition": {
+        "all_services": [
+            "edge-gateway",
+            "user-service",
+            "order-service"
+        ],
+        "required_status": "healthy"
+    }
+}

@@ -1,0 +1,58 @@
+{
+    "task_id": "task_medium",
+    "difficulty": "medium",
+    "description": "Multiple services are degraded. Read the logs carefully to find the root cause before acting.",
+    "initial_state": {
+        "services": {
+            "auth-api": "degraded",
+            "database": "degraded",
+            "web-frontend": "degraded",
+            "cache": "healthy"
+        },
+        "alerts": [
+            {
+                "id": 1,
+                "severity": "critical",
+                "message": "auth-api response time exceeded 10 seconds"
+            },
+            {
+                "id": 2,
+                "severity": "critical",
+                "message": "web-frontend login endpoint returning 503 errors"
+            },
+            {
+                "id": 3,
+                "severity": "warning",
+                "message": "database query latency at 8200ms, threshold is 500ms"
+            }
+        ],
+        "logs": [
+            "database: connection pool at 100% capacity",
+            "database: query queue depth 847 pending queries",
+            "database: disk I/O wait at 94%",
+            "auth-api: timeout waiting for database response after 10000ms",
+            "auth-api: retrying database connection, attempt 3 of 3",
+            "auth-api: all retries exhausted, returning 503 to upstream",
+            "web-frontend: received 503 from auth-api on /login",
+            "web-frontend: user login requests failing, downstream dependency unavailable"
+        ],
+        "step_count": 0
+    },
+    "max_steps": 8,
+    "correct_root_cause": "database",
+    "solution_actions": [
+        "check_logs database",
+        "restart_service database",
+        "check_logs auth-api",
+        "restart_service auth-api"
+    ],
+    "trap": {
+        "wrong_first_action": "restart_service auth-api",
+        "consequence": "auth-api restarts but immediately degrades again because database is still down",
+        "penalty": -0.3
+    },
+    "win_condition": {
+        "all_services": ["auth-api", "database", "web-frontend"],
+        "required_status": "healthy"
+    }
+}

@@ -1,0 +1,75 @@
+{
+    "task_id": "task_hard",
+    "difficulty": "hard",
+    "description": "A recent deployment has caused a critical failure. Restarting services will not fix this. Read the logs and runbook carefully to find the correct remediation.",
+    "initial_state": {
+        "services": {
+            "auth-api": "healthy",
+            "database": "healthy",
+            "web-frontend": "degraded",
+            "payment-service": "down",
+            "cache": "healthy"
+        },
+        "alerts": [
+            {
+                "id": 1,
+                "severity": "critical",
+                "message": "payment-service is down, all transactions failing"
+            },
+            {
+                "id": 2,
+                "severity": "critical",
+                "message": "web-frontend checkout page returning 500 errors"
+            },
+            {
+                "id": 3,
+                "severity": "warning",
+                "message": "memory usage spike detected on payment-service at time of deployment"
+            }
+        ],
+        "logs": [
+            "payment-service: deployment v3.2.1 started at 14:32:10",
+            "payment-service: memory usage 12% at startup",
+            "payment-service: memory usage 45% after 30 seconds",
+            "payment-service: memory usage 89% after 60 seconds",
+            "payment-service: OOMKilled - process terminated by kernel, out of memory",
+            "payment-service: restart attempt 1 - same memory leak pattern observed",
+            "payment-service: restart attempt 2 - OOMKilled again",
+            "deployment-controller: last stable version was v3.2.0, deployed 6 hours ago",
+            "deployment-controller: v3.2.1 introduced changes to payment processing module",
+            "web-frontend: /checkout endpoint depends on payment-service, now returning 500"
+        ],
+        "runbook": {
+            "OOMKilled": "When a service is repeatedly OOMKilled after a recent deployment, do not restart. Check deployment history and rollback to last stable version.",
+            "memory_leak": "Memory leaks introduced by bad deployments cannot be fixed by restarting. Rollback the deployment first, then investigate the code change.",
+            "rollback_command": "rollback_deploy payment-service v3.2.0"
+        },
+        "available_actions": [
+            "check_logs payment-service",
+            "check_logs deployment-controller",
+            "query_runbook OOMKilled",
+            "query_runbook memory_leak",
+            "rollback_deploy payment-service v3.2.0",
+            "restart_service payment-service"
+        ],
+        "step_count": 0
+    },
+    "max_steps": 10,
+    "correct_root_cause": "bad_deployment_v3.2.1",
+    "solution_actions": [
+        "check_logs payment-service",
+        "query_runbook OOMKilled",
+        "rollback_deploy payment-service v3.2.0"
+    ],
+    "trap": {
+        "wrong_action": "restart_service payment-service",
+        "consequence": "payment-service starts but crashes again within 2 steps due to memory leak in v3.2.1",
+        "penalty": -0.3,
+        "max_wrong_restarts": 3
+    },
+    "win_condition": {
+        "all_services": ["payment-service", "web-frontend"],
+        "required_status": "healthy",
+        "required_action_taken": "rollback_deploy payment-service v3.2.0"
+    }
+}

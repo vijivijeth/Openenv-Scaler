@@ -1,0 +1,70 @@
+{
+    "task_id": "task_trap",
+    "difficulty": "expert",
+    "description": "Network partition detected. Restarting any service will cause data corruption. You must isolate the affected availability zone and trigger a database failover.",
+    "initial_state": {
+        "services": {
+            "user-service": "degraded",
+            "payment-gateway": "degraded",
+            "database-primary": "unreachable",
+            "database-replica": "healthy",
+            "edge-gateway": "healthy",
+            "cache": "healthy"
+        },
+        "alerts": [
+            {
+                "id": 1,
+                "severity": "critical",
+                "message": "database-primary is unreachable from us-east-1a"
+            },
+            {
+                "id": 2,
+                "severity": "critical",
+                "message": "user-service reporting split-brain condition"
+            },
+            {
+                "id": 3,
+                "severity": "critical",
+                "message": "payment-gateway transactions failing due to DB write errors"
+            }
+        ],
+        "logs": [
+            "network: us-east-1a availability zone experiencing partial partition",
+            "database-primary: cannot reach quorum — split-brain risk detected",
+            "database-replica: healthy and replication lag is 0ms — ready for promotion",
+            "user-service: write operations failing — awaiting stable DB connection",
+            "payment-gateway: transaction commits failing — DB primary unreachable",
+            "runbook: DO NOT restart services during network partition — causes data corruption",
+            "runbook: correct procedure is isolate_az(us-east-1a) then failover_db(database-primary)"
+        ],
+        "runbook": {
+            "split-brain": "During a network partition never restart services. Isolate the affected AZ first, then promote the replica using failover_db.",
+            "network-partition": "Use isolate_az to fence the affected zone, then failover_db to promote the healthy replica. Only then restart dependent services.",
+            "data-corruption": "Restarting services during split-brain causes conflicting writes. Always isolate first."
+        },
+        "step_count": 0
+    },
+    "max_steps": 10,
+    "correct_root_cause": "network-partition-us-east-1a",
+    "solution_actions": [
+        "query_runbook split-brain",
+        "isolate_az us-east-1a",
+        "failover_db database-primary",
+        "restart_service user-service",
+        "restart_service payment-gateway"
+    ],
+    "trap": {
+        "wrong_action": "restart_service user-service",
+        "consequence": "restarting during partition causes split-brain writes — data corruption detected",
+        "penalty": -0.5
+    },
+    "win_condition": {
+        "all_services": [
+            "user-service",
+            "payment-gateway",
+            "database-primary"
+        ],
+        "required_status": "healthy",
+        "required_action_taken": "failover_db database-primary"
+    }
+}

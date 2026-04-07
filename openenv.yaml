@@ -1,0 +1,56 @@
+name: SRE-ResponseGym
+version: "1.0.0"
+description: >
+  An AI benchmark environment simulating real-world DevOps incident response.
+  Agents must read logs, identify root causes, and remediate production failures
+  across three tasks of increasing difficulty.
+tags:
+  - openenv
+  - sre
+  - devops
+  - incident-response
+  - reinforcement-learning
+api:
+  reset: POST /reset
+  step: POST /step
+  state: GET /state
+tasks:
+  - id: task_easy
+    difficulty: easy
+    description: Single service crash. Identify and restart the correct service.
+  - id: task_medium
+    difficulty: medium
+    description: Database cascade failure. Trace root cause before acting.
+  - id: task_hard
+    difficulty: hard
+    description: Bad deployment with memory leak. Rollback required, restart will fail.
+  - id: task_expert
+    difficulty: expert
+    description: Multi-service cascade. Must restore in correct dependency order.
+  - id: task_trap
+    difficulty: expert
+    description: Network partition. Restarting causes data corruption. Isolate and failover.
+  - id: task_extreme
+    difficulty: extreme
+    description: Full platform meltdown. Three root causes. Circuit breaker reset required.
+action_space:
+  type: text
+  examples:
+    - restart_service auth-api
+    - check_logs database
+    - query_runbook OOMKilled
+    - rollback_deploy payment-service v3.2.0
+    - acknowledge_alert 1
+observation_space:
+  type: json
+  fields:
+    - task_id
+    - description
+    - services
+    - alerts
+    - logs
+    - step
+    - max_steps
+reward_range: [-1.0, 1.0]
+docker:
+  port: 7860

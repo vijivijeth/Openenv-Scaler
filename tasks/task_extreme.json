@@ -1,0 +1,87 @@
+{
+    "task_id": "task_extreme",
+    "difficulty": "extreme",
+    "description": "Full platform meltdown. Three independent root causes. Circuit breakers tripped. You must diagnose each failure independently and resolve them in the correct sequence.",
+    "initial_state": {
+        "services": {
+            "edge-gateway": "down",
+            "user-service": "down",
+            "payment-service": "down",
+            "notification-service": "degraded",
+            "database-primary": "healthy",
+            "database-replica": "healthy",
+            "cache": "degraded",
+            "message-queue": "healthy"
+        },
+        "alerts": [
+            {
+                "id": 1,
+                "severity": "critical",
+                "message": "edge-gateway circuit breaker tripped — too many upstream failures"
+            },
+            {
+                "id": 2,
+                "severity": "critical",
+                "message": "user-service OOMKilled after deployment v4.1.0"
+            },
+            {
+                "id": 3,
+                "severity": "critical",
+                "message": "payment-service database connection pool exhausted"
+            },
+            {
+                "id": 4,
+                "severity": "warning",
+                "message": "notification-service queue backing up — 4200 pending messages"
+            },
+            {
+                "id": 5,
+                "severity": "warning",
+                "message": "cache hit rate dropped to 12% — possible eviction storm"
+            }
+        ],
+        "logs": [
+            "user-service: deployment v4.1.0 introduced memory leak — OOMKilled 3 times",
+            "user-service: last stable version was v4.0.8",
+            "payment-service: connection pool at 100/100 — new connections rejected",
+            "payment-service: connections not being released — possible connection leak in v2.3.1",
+            "payment-service: last stable version was v2.3.0",
+            "edge-gateway: circuit breaker tripped after 500 failures in 60 seconds",
+            "edge-gateway: will not recover automatically — requires manual reset_circuit_breaker",
+            "deployment-controller: user-service v4.1.0 deployed 23 minutes ago",
+            "deployment-controller: payment-service v2.3.1 deployed 47 minutes ago"
+        ],
+        "runbook": {
+            "OOMKilled": "Memory leaks from bad deployments cannot be fixed by restart. Rollback to last stable version.",
+            "circuit-breaker": "Circuit breakers must be manually reset using reset_circuit_breaker after upstream issues are resolved.",
+            "connection-pool": "Connection pool exhaustion caused by code leak requires rollback, not restart.",
+            "recovery-order": "Fix upstream services first before resetting circuit breakers. Order: rollback user-service → rollback payment-service → reset_circuit_breaker edge-gateway"
+        },
+        "step_count": 0
+    },
+    "max_steps": 15,
+    "correct_root_cause": "multiple-bad-deployments",
+    "solution_actions": [
+        "check_logs user-service",
+        "query_runbook OOMKilled",
+        "rollback_deploy user-service v4.0.8",
+        "check_logs payment-service",
+        "rollback_deploy payment-service v2.3.0",
+        "reset_circuit_breaker edge-gateway"
+    ],
+    "trap": {
+        "wrong_action": "restart_service user-service",
+        "consequence": "user-service restarts but OOMKilled again within 2 steps due to memory leak",
+        "penalty": -0.3,
+        "max_wrong_restarts": 2
+    },
+    "win_condition": {
+        "all_services": [
+            "edge-gateway",
+            "user-service",
+            "payment-service"
+        ],
+        "required_status": "healthy",
+        "required_action_taken": "reset_circuit_breaker edge-gateway"
+    }
+}
