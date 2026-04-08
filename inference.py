@@ -7,8 +7,8 @@ import requests
 
 
 # ─── MANDATORY ENV VARIABLES ───────────────────────────────────────────────
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.environ.get("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
+API_BASE_URL = os.environ.get("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME   = os.environ.get("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
 API_KEY      = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN", "")
 ENV_URL      = os.environ.get("ENV_URL", "http://localhost:7860")
 
@@ -83,43 +83,8 @@ Reply with ONLY the action string. One line. No explanation."""
 def get_action(client: OpenAI, observation: dict,
                action_history: list, task_id: str) -> str:
 
-    # --- Primary: use optimal sequence if available ---
-    if task_id in TASK_OPTIMAL_SEQUENCES:
-        sequence = TASK_OPTIMAL_SEQUENCES[task_id]
-        step = len(action_history)
-        if step < len(sequence):
-            return sequence[step]
-
-    # --- Fallback: rule-based for unknown tasks ---
     services = observation['services']
     logs_text = "\n".join(observation['logs'])
-
-    checked = [
-        a.replace('check_logs ', '').strip()
-        for a in action_history if a.startswith('check_logs')
-    ]
-    restarted = [
-        a.replace('restart_service ', '').strip()
-        for a in action_history if a.startswith('restart_service')
-    ]
-    already_rolled_back = [
-        a for a in action_history if a.startswith('rollback_deploy')
-    ]
-
-    if ('oomkilled' in logs_text.lower() or
-            'memory leak' in logs_text.lower()):
-        if not already_rolled_back:
-            for svc in services:
-                if svc not in checked:
-                    return f"check_logs {svc}"
-            return "rollback_deploy service v1.0.0"
-
-    down = [n for n, s in services.items() if s in ['down', 'degraded']]
-    for svc in down:
-        if svc not in checked:
-            return f"check_logs {svc}"
-        if svc not in restarted:
-            return f"restart_service {svc}"
 
     try:
         response = client.chat.completions.create(
@@ -132,7 +97,9 @@ def get_action(client: OpenAI, observation: dict,
             temperature=0.0
         )
         return response.choices[0].message.content.strip().lower().split("\n")[0]
-    except Exception:
+    except Exception as e:
+        print(f"LLM call failed: {e}", flush=True)
+        down = [n for n, s in services.items() if s in ['down', 'degraded']]
         return f"check_logs {down[0]}" if down else "check_logs database"
 
 
@@ -210,8 +177,8 @@ def run_task(client: OpenAI, task_id: str) -> None:
 
 def main() -> None:
     client = OpenAI(
-        base_url=API_BASE_URL,
-        api_key=API_KEY
+        base_url=os.environ["API_BASE_URL"],
+        api_key=os.environ["API_KEY"]
     )
 
     for task_id in TASKS:
