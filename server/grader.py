@@ -27,7 +27,7 @@ class Grader:
             actions_in_solution / len(solution) if solution else 1.0
         )
 
-        final_score = round(max(0.0, min(1.0,
+        final_score = round(max(0.001, min(0.999,
             0.5 * resolution +
             0.3 * efficiency +
             0.2 * root_cause
