@@ -198,13 +198,14 @@ def run_task(client: OpenAI, task_id: str) -> None:
         error = result.get("info", {}).get("error", None)
         error_str = error if error else "null"
 
-        rewards.append(reward)
+        clamped = round(max(0.001, min(0.999, float(reward))), 3)
+        rewards.append(clamped)
 
         print(
             f"[STEP] "
             f"step={step} "
             f"action={action} "
-            f"reward={reward:.2f} "
+            f"reward={clamped:.3f} "
             f"done={str(done).lower()} "
             f"error={error_str}",
             flush=True
@@ -223,7 +224,7 @@ def run_task(client: OpenAI, task_id: str) -> None:
         final = 0.0
         success = False
 
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_str = ",".join(f"{r:.3f}" for r in rewards)
 
     print(
         f"[END] "
