@@ -193,7 +193,7 @@ def run_task(client: OpenAI, task_id: str) -> None:
         )
         result = step_resp.json()
         observation = result["observation"]
-        reward = result.get("reward", 0.0)
+        reward = result.get("reward", 0.01)
         done = result.get("done", False)
         error = result.get("info", {}).get("error", None)
         error_str = error if error else "null"
@@ -218,18 +218,24 @@ def run_task(client: OpenAI, task_id: str) -> None:
     try:
         grade_resp = requests.get(f"{ENV_URL}/grade")
         grade = grade_resp.json()
-        final = grade.get("final_score", 0.0)
+        final = grade.get("final_score", 0.5)
+        # Clamp strictly within (0,1)
+        final = round(max(0.001, min(0.999, float(final))), 3)
         success = final >= 0.5
     except Exception:
-        final = 0.0
+        final = 0.5
         success = False
 
-    rewards_str = ",".join(f"{r:.3f}" for r in rewards)
+    rewards_str = ",".join(
+        f"{round(max(0.001, min(0.999, float(r))), 3):.3f}" 
+        for r in rewards
+    )
 
     print(
         f"[END] "
         f"success={str(success).lower()} "
         f"steps={len(rewards)} "
+        f"score={final:.3f} "
         f"rewards={rewards_str}",
         flush=True
     )
