@@ -2,16 +2,15 @@ import os
 import json
 import requests
 from openai import OpenAI
-from dotenv import load_dotenv
 import requests
  
-load_dotenv()
+
 
 # ─── MANDATORY ENV VARIABLES ───────────────────────────────────────────────
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
-API_KEY      = os.getenv("HF_TOKEN",     "")
-ENV_URL      = os.getenv("ENV_URL",      "http://localhost:7860")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME   = os.environ.get("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
+API_KEY      = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN", "")
+ENV_URL      = os.environ.get("ENV_URL", "http://localhost:7860")
 
 TASKS        = [
     "task_easy", "task_medium", "task_hard",
@@ -212,7 +211,7 @@ def run_task(client: OpenAI, task_id: str) -> None:
 def main() -> None:
     client = OpenAI(
         base_url=API_BASE_URL,
-        api_key=API_KEY if API_KEY else "dummy"
+        api_key=API_KEY
     )
 
     for task_id in TASKS:
