@@ -43,7 +43,7 @@ class IncidentEnv:
         if self.done:
             return {
                 "observation": self._build_observation(),
-                "reward": 0.0,
+                "reward": 0.01,
                 "done": True,
                 "info": {"message": "Episode already finished. Call reset()."}
             }
@@ -138,7 +138,7 @@ class IncidentEnv:
                 self.state_data["logs"].append(
                     f"[RUNBOOK] {keyword}: {runbook[keyword]}"
                 )
-                return 0.1
+                return 0.11
             
             # Partial match — keyword appears inside a key
             for key, val in runbook.items():
@@ -146,12 +146,12 @@ class IncidentEnv:
                     self.state_data["logs"].append(
                         f"[RUNBOOK] {key}: {val}"
                     )
-                    return 0.1
+                    return 0.11
             
             self.state_data["logs"].append(
                 f"[RUNBOOK] No entry found for: {keyword}"
             )
-            return 0.0
+            return 0.01
 
         # --- rollback_deploy ---
         if action.startswith("rollback_deploy"):
@@ -183,7 +183,7 @@ class IncidentEnv:
                     " Replica promoted to primary."
                 )
                 return 0.4
-            return 0.0
+            return 0.01
 
         # --- reset_circuit_breaker ---
         if action.startswith("reset_circuit_breaker"):
@@ -197,7 +197,7 @@ class IncidentEnv:
                 if a.startswith("reset_circuit_breaker")
             ]
             if previous_resets:
-                return 0.0
+                return 0.01
             if service in self.state_data["services"]:
                 self.state_data["services"][service] = "healthy"
                 self.state_data["logs"].append(
@@ -205,7 +205,7 @@ class IncidentEnv:
                     " Traffic resuming."
                 )
                 return 0.5
-            return 0.0
+            return 0.01
 
         # --- acknowledge_alert ---
         if action.startswith("acknowledge_alert"):
@@ -217,7 +217,7 @@ class IncidentEnv:
             ]
             return 0.05
 
-        return 0.0
+        return 0.01
 
     # -------------------------
     # HANDLE RESTART
@@ -276,7 +276,7 @@ class IncidentEnv:
             ]
             return 0.3
 
-        return 0.0
+        return 0.01
 
     # -------------------------
     # HANDLE ROLLBACK
@@ -284,7 +284,7 @@ class IncidentEnv:
     def _handle_rollback(self, action: str) -> float:
         parts = action.split()
         if len(parts) < 3:
-            return 0.0
+            return 0.01
 
         service = parts[1]
         version = parts[2]
@@ -299,7 +299,7 @@ class IncidentEnv:
             if a.startswith(f"rollback_deploy {service_check}")
         ]
         if previous_same_service_rollbacks:
-            return 0.0
+            return 0.01
 
         if action in correct_actions:
             self.state_data["services"][service] = "healthy"
@@ -312,7 +312,7 @@ class IncidentEnv:
             )
             return 0.5
 
-        return 0.0
+        return 0.01
 
     # -------------------------
     # CHECK IF EPISODE IS DONE

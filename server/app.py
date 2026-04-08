@@ -69,14 +69,13 @@ def reset(request: ResetRequest = ResetRequest()):
         "message": f"Episode started for {request.task_id}"
     }
 
-@app.post("/step", response_model=StepResponse)
+@app.post("/step")
 def step(request: StepRequest):
     if env.current_task is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Environment not initialised. Call /reset first."
-        )
+        raise HTTPException(status_code=400, detail="Call /reset first.")
     result = env.step(request.action)
+    # Ensure reward never hits exactly 0.0 or 1.0
+    result["reward"] = round(max(0.001, min(0.999, float(result["reward"]))), 3)
     return result
 
 @app.get("/state")
