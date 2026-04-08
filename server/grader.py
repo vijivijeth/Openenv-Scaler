@@ -4,7 +4,7 @@ class Grader:
         self.task = task
 
     def _clamp(self, value: float) -> float:
-        return round(max(0.001, min(0.999, value)), 3)
+        return round(max(0.01, min(0.99, value)), 3)
 
     def grade(self, final_services: dict, action_history: list,
               step_count: int) -> dict:

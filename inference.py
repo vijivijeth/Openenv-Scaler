@@ -198,19 +198,20 @@ def run_task(client: OpenAI, task_id: str) -> None:
         error = result.get("info", {}).get("error", None)
         error_str = error if error else "null"
 
-        clamped = round(max(0.001, min(0.999, float(reward))), 3)
+        # Clamp reward — min 0.01 so it prints as 0.01 not 0.00
+        clamped = round(max(0.01, min(0.99, float(reward))), 2)
         rewards.append(clamped)
 
         print(
             f"[STEP] "
             f"step={step} "
             f"action={action} "
-            f"reward={clamped:.3f} "
+            f"reward={clamped:.2f} "
             f"done={str(done).lower()} "
             f"error={error_str}",
             flush=True
         )
-
+        
         if done:
             success = True
             break
@@ -226,20 +227,17 @@ def run_task(client: OpenAI, task_id: str) -> None:
         final = 0.5
         success = False
 
-    rewards_str = ",".join(
-        f"{round(max(0.001, min(0.999, float(r))), 3):.3f}" 
-        for r in rewards
-    )
+    rewards_str = ",".join(f"{round(max(0.01, min(0.99, float(r))), 2):.2f}" for r in rewards)
+    final = round(max(0.01, min(0.99, float(final))), 2)
 
     print(
         f"[END] "
         f"success={str(success).lower()} "
         f"steps={len(rewards)} "
-        f"score={final:.3f} "
+        f"score={final:.2f} "
         f"rewards={rewards_str}",
         flush=True
     )
-
 
 def main() -> None:
     global _credits_exhausted
