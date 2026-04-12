@@ -1,58 +1,162 @@
 {
-    "task_id": "task_medium",
-    "difficulty": "medium",
-    "description": "Multiple services are degraded. Read the logs carefully to find the root cause before acting.",
-    "initial_state": {
-        "services": {
-            "auth-api": "degraded",
-            "database": "degraded",
-            "web-frontend": "degraded",
-            "cache": "healthy"
-        },
-        "alerts": [
-            {
-                "id": 1,
-                "severity": "critical",
-                "message": "auth-api response time exceeded 10 seconds"
-            },
-            {
-                "id": 2,
-                "severity": "critical",
-                "message": "web-frontend login endpoint returning 503 errors"
-            },
-            {
-                "id": 3,
-                "severity": "warning",
-                "message": "database query latency at 8200ms, threshold is 500ms"
-            }
-        ],
-        "logs": [
-            "database: connection pool at 100% capacity",
-            "database: query queue depth 847 pending queries",
-            "database: disk I/O wait at 94%",
-            "auth-api: timeout waiting for database response after 10000ms",
-            "auth-api: retrying database connection, attempt 3 of 3",
-            "auth-api: all retries exhausted, returning 503 to upstream",
-            "web-frontend: received 503 from auth-api on /login",
-            "web-frontend: user login requests failing, downstream dependency unavailable"
-        ],
-        "step_count": 0
-    },
-    "max_steps": 8,
-    "correct_root_cause": "database",
-    "solution_actions": [
-        "check_logs database",
-        "restart_service database",
-        "check_logs auth-api",
-        "restart_service auth-api"
+  "task_id": "task_medium",
+  "difficulty": "medium",
+  "family": "platform",
+  "title": "Database Connection Storm",
+  "description": "A saturated database connection pool is cascading into auth and frontend latency. Trace the dependency chain, stabilize the database first, then let upper layers recover.",
+  "incident_commander_brief": "SEV2 platform incident. user-db stopped accepting new sessions and dependent services are timing out in a cascade.",
+  "max_steps": 9,
+  "diagnosis_actions": [
+    "check_logs user-db",
+    "check_dependencies auth-api",
+    "check_metrics user-db"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 1
+  },
+  "success_criteria": {
+    "required_services": [
+      "user-db",
+      "auth-api",
+      "web-frontend"
     ],
-    "trap": {
-        "wrong_first_action": "restart_service auth-api",
-        "consequence": "auth-api restarts but immediately degrades again because database is still down",
-        "penalty": -0.3
+    "required_actions": [
+      "acknowledge_alert 401",
+      "post_status major user-db saturation under investigation",
+      "restart_service user-db"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 401",
+    "check_dependencies auth-api",
+    "check_metrics user-db",
+    "check_logs user-db",
+    "post_status major user-db saturation under investigation",
+    "restart_service user-db"
+  ],
+  "initial_state": {
+    "services": {
+      "web-frontend": {
+        "status": "degraded",
+        "dependencies": [
+          "auth-api"
+        ],
+        "az": "global",
+        "current_version": "v2.8.4",
+        "stable_version": "v2.8.4",
+        "replicas": 6,
+        "desired_replicas": 6,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "auth-api": {
+        "status": "degraded",
+        "dependencies": [
+          "user-db"
+        ],
+        "az": "us-central-1",
+        "current_version": "v5.4.1",
+        "stable_version": "v5.4.1",
+        "replicas": 4,
+        "desired_replicas": 4,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "user-db": {
+        "status": "down",
+        "dependencies": [],
+        "az": "us-central-1",
+        "current_version": "13.11",
+        "stable_version": "13.11",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      }
     },
-    "win_condition": {
-        "all_services": ["auth-api", "database", "web-frontend"],
-        "required_status": "healthy"
+    "alerts": [
+      {
+        "id": 401,
+        "severity": "critical",
+        "service": "user-db",
+        "message": "database refused new connections for auth-api"
+      }
+    ],
+    "metrics": {
+      "web-frontend": {
+        "latency_ms": 810,
+        "error_rate_pct": 16.0,
+        "queue_depth": 42
+      },
+      "auth-api": {
+        "latency_ms": 1220,
+        "error_rate_pct": 34.0,
+        "queue_depth": 77
+      },
+      "user-db": {
+        "latency_ms": 2010,
+        "error_rate_pct": 61.5,
+        "connections_used": 150,
+        "connections_limit": 150
+      }
+    },
+    "customer_impact": {
+      "severity": "sev2",
+      "users_affected_pct": 42.0,
+      "revenue_risk_per_min": 3600,
+      "error_budget_burn_rate": 7.9
+    },
+    "logs": [
+      "[ALERT] auth-api reports connection acquisition timeouts against user-db."
+    ],
+    "deploy_history": {
+      "user-db": [
+        "2026-04-11T07:55Z primary failback completed cleanly"
+      ]
+    },
+    "dependency_graph": {
+      "auth-api": [
+        "auth-api -> user-db for every session lookup."
+      ],
+      "web-frontend": [
+        "web-frontend depends on auth-api for login and session refresh."
+      ]
+    },
+    "runbooks": {
+      "pool-saturation": "If the database accepts no new connections and no bad deploy exists, restart the primary after draining dead sessions."
+    },
+    "evidence": {
+      "logs": {
+        "user-db": [
+          "[ERROR] connection pool exhausted; hundreds of idle backend sessions retained",
+          "[WARN] no replication fault detected; issue isolated to the primary session pool"
+        ],
+        "auth-api": [
+          "[WARN] timed out waiting for available db connection"
+        ]
+      }
     }
+  },
+  "hidden_causes": [
+    {
+      "id": "user_db_pool_exhaustion",
+      "type": "pool_saturation",
+      "service": "user-db",
+      "affected_services": [
+        "user-db",
+        "auth-api",
+        "web-frontend"
+      ],
+      "summary": "Restart the primary database to flush dead sessions and restore connectivity.",
+      "impact": 0.76,
+      "fix_action": "restart_service user-db",
+      "prerequisite_actions": [
+        "check_metrics user-db",
+        "check_logs user-db"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "user-db restarted, dead sessions drained, and dependent APIs recovered."
+    }
+  ]
 }

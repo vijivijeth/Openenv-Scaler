@@ -2423,6 +2423,7 @@ name = "sre-responsegym"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aiofiles" },
     { name = "fastapi" },
     { name = "openai" },
     { name = "openenv-core" },
@@ -2433,6 +2434,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiofiles" },
     { name = "fastapi" },
     { name = "openai" },
     { name = "openenv-core", specifier = ">=0.2.0" },

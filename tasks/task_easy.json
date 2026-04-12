@@ -1,32 +1,153 @@
 {
-    "task_id": "task_easy",
-    "difficulty": "easy",
-    "description": "A single service has crashed. Identify it and restart it.",
-    "initial_state": {
-        "services": {
-            "auth-api": "down",
-            "database": "healthy",
-            "web-frontend": "healthy"
-        },
-        "alerts": [
-            {
-                "id": 1,
-                "severity": "critical",
-                "message": "auth-api is not responding to health checks"
-            }
+  "task_id": "task_easy",
+  "difficulty": "easy",
+  "family": "service-level",
+  "title": "Auth API Crash Loop",
+  "description": "A single production API crashed after a config reload. Inspect the failing service, acknowledge the page, and restore auth without disturbing healthy dependencies.",
+  "incident_commander_brief": "SEV3 auth degradation. Login success dropped after auth-api workers crashed. Customer impact is rising but the blast radius is still isolated.",
+  "max_steps": 6,
+  "diagnosis_actions": [
+    "check_logs auth-api",
+    "check_metrics auth-api"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 0
+  },
+  "success_criteria": {
+    "required_services": [
+      "auth-api",
+      "web-frontend"
+    ],
+    "required_actions": [
+      "acknowledge_alert 101",
+      "restart_service auth-api"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 101",
+    "check_logs auth-api",
+    "restart_service auth-api"
+  ],
+  "initial_state": {
+    "services": {
+      "web-frontend": {
+        "status": "degraded",
+        "dependencies": [
+          "auth-api"
         ],
-        "logs": [
-            "auth-api process exited with code 137",
-            "auth-api failed to start: port 8080 already in use",
-            "No downstream errors detected in database or web-frontend"
+        "az": "global",
+        "current_version": "v2.8.4",
+        "stable_version": "v2.8.4",
+        "replicas": 6,
+        "desired_replicas": 6,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "auth-api": {
+        "status": "down",
+        "dependencies": [
+          "user-db"
         ],
-        "step_count": 0
+        "az": "us-central-1",
+        "current_version": "v5.4.1",
+        "stable_version": "v5.4.1",
+        "replicas": 4,
+        "desired_replicas": 4,
+        "traffic": "live"
+      },
+      "user-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-central-1",
+        "current_version": "13.11",
+        "stable_version": "13.11",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      }
     },
-    "max_steps": 5,
-    "correct_root_cause": "auth-api",
-    "solution_actions": ["restart_service auth-api"],
-    "win_condition": {
-        "all_services": ["auth-api", "database", "web-frontend"],
-        "required_status": "healthy"
+    "alerts": [
+      {
+        "id": 101,
+        "severity": "critical",
+        "service": "auth-api",
+        "message": "auth-api crash loop detected across all pods"
+      }
+    ],
+    "metrics": {
+      "web-frontend": {
+        "latency_ms": 460,
+        "error_rate_pct": 12.4,
+        "queue_depth": 4
+      },
+      "auth-api": {
+        "latency_ms": 0,
+        "error_rate_pct": 98.3,
+        "memory_pct": 18.0,
+        "queue_depth": 0
+      },
+      "user-db": {
+        "latency_ms": 18,
+        "error_rate_pct": 0.2,
+        "connections_used": 22,
+        "connections_limit": 150
+      }
+    },
+    "customer_impact": {
+      "severity": "sev3",
+      "users_affected_pct": 18.0,
+      "revenue_risk_per_min": 1250,
+      "error_budget_burn_rate": 4.2
+    },
+    "logs": [
+      "[ALERT] Login failures increasing from edge-gateway.",
+      "[HINT] web-frontend depends on auth-api for session refresh."
+    ],
+    "deploy_history": {
+      "auth-api": [
+        "2026-04-11T08:50Z v5.4.1 config reload completed",
+        "2026-04-11T08:41Z v5.4.1 canary promoted"
+      ]
+    },
+    "dependency_graph": {
+      "web-frontend": [
+        "web-frontend -> auth-api -> user-db"
+      ],
+      "auth-api": [
+        "auth-api calls user-db for session validation."
+      ]
+    },
+    "runbooks": {
+      "crash-loop": "If crash-loop follows config reload and dependencies are healthy, restart the service to load the corrected config."
+    },
+    "evidence": {
+      "logs": {
+        "auth-api": [
+          "[ERROR] failed to parse rotated config; process exited with code 1",
+          "[INFO] validated db connectivity before crash"
+        ]
+      }
     }
+  },
+  "hidden_causes": [
+    {
+      "id": "auth_config_crash",
+      "type": "single_crash",
+      "service": "auth-api",
+      "affected_services": [
+        "auth-api",
+        "web-frontend"
+      ],
+      "summary": "auth-api needs a clean restart after the bad config parse was corrected.",
+      "impact": 0.45,
+      "fix_action": "restart_service auth-api",
+      "prerequisite_actions": [
+        "check_logs auth-api"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "auth-api restarted cleanly and session refresh recovered."
+    }
+  ]
 }

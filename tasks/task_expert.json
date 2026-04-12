@@ -1,68 +1,266 @@
 {
-    "task_id": "task_expert",
-    "difficulty": "expert",
-    "description": "A cascading multi-region failure. Services must be restored in the correct dependency order or data loss occurs.",
-    "initial_state": {
-        "services": {
-            "edge-gateway": "down",
-            "user-service": "down",
-            "order-service": "down",
-            "inventory-service": "degraded",
-            "database-primary": "healthy",
-            "database-replica": "healthy"
-        },
-        "alerts": [
-            {
-                "id": 1,
-                "severity": "critical",
-                "message": "edge-gateway is rejecting all incoming traffic"
-            },
-            {
-                "id": 2,
-                "severity": "critical",
-                "message": "user-service cannot reach order-service"
-            },
-            {
-                "id": 3,
-                "severity": "critical",
-                "message": "order-service dependency on user-service is unresolved"
-            },
-            {
-                "id": 4,
-                "severity": "warning",
-                "message": "inventory-service reporting degraded cache hits"
-            }
-        ],
-        "logs": [
-            "edge-gateway: upstream user-service not reachable, dropping requests",
-            "user-service: failed to connect to order-service on port 8082",
-            "order-service: waiting for user-service auth token, timeout after 5s",
-            "order-service: cannot start without user-service being healthy first",
-            "inventory-service: cache miss rate at 78%, falling back to database",
-            "dependency-map: correct restore order is user-service → order-service → edge-gateway"
-        ],
-        "step_count": 0
-    },
-    "max_steps": 12,
-    "correct_root_cause": "user-service",
-    "solution_actions": [
-        "check_logs user-service",
-        "restart_service user-service",
-        "check_logs order-service",
-        "restart_service order-service",
-        "restart_service edge-gateway"
+  "task_id": "task_expert",
+  "difficulty": "expert",
+  "family": "distributed",
+  "title": "Dependency Restore Ordering",
+  "description": "A distributed outage requires restoring services in the correct dependency order. Recover the cache layer, then the user path, then the order path, and finally reopen the gateway circuit.",
+  "incident_commander_brief": "SEV2 order placement is offline. A cache outage stalled user-service, which backed up order-service and tripped the gateway circuit breaker.",
+  "max_steps": 12,
+  "diagnosis_actions": [
+    "check_dependencies user-service",
+    "check_logs redis-cache",
+    "check_dependencies order-service"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 1
+  },
+  "success_criteria": {
+    "required_services": [
+      "redis-cache",
+      "user-service",
+      "order-service",
+      "edge-gateway"
     ],
-    "trap": {
-        "wrong_first_action": "restart_service edge-gateway",
-        "consequence": "edge-gateway restarted but crashes again — upstream dependencies still down",
-        "penalty": -0.3
-    },
-    "win_condition": {
-        "all_services": [
-            "edge-gateway",
-            "user-service",
-            "order-service"
+    "required_actions": [
+      "acknowledge_alert 601",
+      "post_status major restoring dependencies from the cache layer upward",
+      "restart_service redis-cache",
+      "restart_service user-service",
+      "restart_service order-service",
+      "reset_circuit_breaker edge-gateway"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 601",
+    "check_logs redis-cache",
+    "check_dependencies user-service",
+    "check_dependencies order-service",
+    "post_status major restoring dependencies from the cache layer upward",
+    "restart_service redis-cache",
+    "restart_service user-service",
+    "restart_service order-service",
+    "reset_circuit_breaker edge-gateway"
+  ],
+  "initial_state": {
+    "services": {
+      "edge-gateway": {
+        "status": "degraded",
+        "dependencies": [
+          "order-service"
         ],
-        "required_status": "healthy"
+        "az": "global",
+        "current_version": "v8.0.0",
+        "stable_version": "v8.0.0",
+        "replicas": 8,
+        "desired_replicas": 8,
+        "traffic": "live"
+      },
+      "order-service": {
+        "status": "degraded",
+        "dependencies": [
+          "user-service",
+          "payments-db"
+        ],
+        "az": "us-east-1",
+        "current_version": "v5.1.0",
+        "stable_version": "v5.1.0",
+        "replicas": 5,
+        "desired_replicas": 5,
+        "traffic": "live"
+      },
+      "user-service": {
+        "status": "degraded",
+        "dependencies": [
+          "redis-cache",
+          "user-db"
+        ],
+        "az": "us-east-1",
+        "current_version": "v4.3.1",
+        "stable_version": "v4.3.1",
+        "replicas": 4,
+        "desired_replicas": 4,
+        "traffic": "live"
+      },
+      "redis-cache": {
+        "status": "down",
+        "dependencies": [],
+        "az": "us-east-1",
+        "current_version": "redis-7.2",
+        "stable_version": "redis-7.2",
+        "replicas": 3,
+        "desired_replicas": 3,
+        "traffic": "live"
+      },
+      "user-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-east-1",
+        "current_version": "14.1",
+        "stable_version": "14.1",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      },
+      "payments-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-east-1",
+        "current_version": "14.1",
+        "stable_version": "14.1",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      }
+    },
+    "alerts": [
+      {
+        "id": 601,
+        "severity": "critical",
+        "service": "edge-gateway",
+        "message": "gateway circuit open because order-service dependency chain is unhealthy"
+      }
+    ],
+    "metrics": {
+      "edge-gateway": {
+        "latency_ms": 330,
+        "error_rate_pct": 41.0,
+        "queue_depth": 18
+      },
+      "order-service": {
+        "latency_ms": 1280,
+        "error_rate_pct": 63.0,
+        "queue_depth": 144
+      },
+      "user-service": {
+        "latency_ms": 890,
+        "error_rate_pct": 37.0,
+        "queue_depth": 96
+      },
+      "redis-cache": {
+        "latency_ms": 0,
+        "error_rate_pct": 100.0
+      }
+    },
+    "customer_impact": {
+      "severity": "sev2",
+      "users_affected_pct": 48.0,
+      "revenue_risk_per_min": 4500,
+      "error_budget_burn_rate": 8.4
+    },
+    "logs": [
+      "[ALERT] edge-gateway opened the breaker after repeated order-service failures."
+    ],
+    "deploy_history": {
+      "redis-cache": [
+        "2026-04-11T06:10Z host patch reboot completed"
+      ]
+    },
+    "dependency_graph": {
+      "user-service": [
+        "user-service depends on redis-cache for profiles and user-db for durable state."
+      ],
+      "order-service": [
+        "order-service depends on user-service for identity enrichment and payments-db for writes."
+      ],
+      "edge-gateway": [
+        "edge-gateway sends checkout traffic to order-service."
+      ]
+    },
+    "runbooks": {
+      "dependency-order": "Recover the lowest healthy dependency first. Restart each higher layer only after the layer below is healthy."
+    },
+    "evidence": {
+      "logs": {
+        "redis-cache": [
+          "[ERROR] cache process exited after host patch; no data corruption detected"
+        ],
+        "user-service": [
+          "[WARN] redis unavailable; serving stale reads and timing out"
+        ],
+        "order-service": [
+          "[WARN] upstream user-service unhealthy; queue stalled"
+        ]
+      }
     }
+  },
+  "hidden_causes": [
+    {
+      "id": "redis_cache_outage",
+      "type": "single_crash",
+      "service": "redis-cache",
+      "affected_services": [
+        "redis-cache"
+      ],
+      "summary": "redis-cache needs a clean restart after the host patch reboot.",
+      "impact": 0.44,
+      "fix_action": "restart_service redis-cache",
+      "prerequisite_actions": [
+        "check_logs redis-cache"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "redis-cache restarted and dependency reads resumed."
+    },
+    {
+      "id": "user_service_recovery",
+      "type": "dependency_recovery",
+      "service": "user-service",
+      "affected_services": [
+        "user-service"
+      ],
+      "summary": "Restart user-service after redis-cache is healthy to flush stale connections.",
+      "impact": 0.36,
+      "fix_action": "restart_service user-service",
+      "prerequisite_actions": [
+        "check_dependencies user-service",
+        "restart_service redis-cache"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "user-service restarted after cache recovery and returned to normal latency."
+    },
+    {
+      "id": "order_service_recovery",
+      "type": "dependency_recovery",
+      "service": "order-service",
+      "affected_services": [
+        "order-service"
+      ],
+      "summary": "Restart order-service only after user-service is healthy.",
+      "impact": 0.34,
+      "fix_action": "restart_service order-service",
+      "prerequisite_actions": [
+        "check_dependencies order-service",
+        "restart_service user-service"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "order-service recovered after upstream services were restored."
+    },
+    {
+      "id": "edge_gateway_breaker",
+      "type": "traffic_reload",
+      "service": "edge-gateway",
+      "affected_services": [
+        "edge-gateway"
+      ],
+      "summary": "Reset the gateway breaker after order-service is healthy.",
+      "impact": 0.29,
+      "fix_action": "reset_circuit_breaker edge-gateway",
+      "prerequisite_actions": [
+        "restart_service order-service"
+      ],
+      "unsafe_actions": [
+        {
+          "action": "reset_circuit_breaker edge-gateway",
+          "service": "edge-gateway",
+          "resulting_status": "degraded",
+          "safe_after": [
+            "restart_service order-service"
+          ],
+          "consequence": "Reset the gateway breaker before upstream recovery; traffic immediately re-tripped."
+        }
+      ],
+      "resolution_log": "edge-gateway breaker reset cleanly after the order path recovered."
+    }
+  ]
 }

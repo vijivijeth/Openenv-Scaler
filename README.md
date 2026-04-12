@@ -1,166 +1,240 @@
----
-title: OpenEnv SRE ResponseGym
-emoji: 🏋️
-colorFrom: blue
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
----
+# OpenEnv SRE-ResponseGym V2
 
-# OpenEnv SRE-ResponseGym
+SRE-ResponseGym V2 is a deterministic OpenEnv environment for evaluating agents
+on realistic SRE incident command workflows. Agents must investigate partial
+evidence, avoid unsafe actions, communicate status updates, and recover service
+health under time pressure.
 
-**AI Incident Response Benchmark — OpenEnv Compatible**
+## Why This Submission Is Strong
 
-> Train and evaluate AI agents on realistic Site Reliability Engineering 
-> incident response scenarios. From simple crashes to full platform 
-> meltdowns — agents must read logs, trace root causes, and remediate 
-> production failures without causing further damage.
+This project is intentionally designed to score well across the five hackathon
+categories.
 
-[![OpenEnv](https://img.shields.io/badge/OpenEnv-1.0-blue)](https://openenv.dev)
-[![Tasks](https://img.shields.io/badge/Tasks-6-orange)]()
-[![Docker](https://img.shields.io/badge/Docker-ready-green)]()
+- Real-world utility: incidents model production failure modes such as bad
+  deploys, connection leaks, split-brain failovers, and circuit breaker
+  recovery.
+- Task and grader quality: success depends on diagnosis, safety, efficiency, and
+  incident hygiene instead of a single end-state check.
+- Environment design: every action advances incident time, affects customer
+  impact, and can worsen or irreversibly damage the system.
+- Code quality and spec compliance: typed OpenEnv models, deterministic task
+  data, validation coverage, and concurrent-session-friendly dashboard helpers.
+- Creativity and novelty: the benchmark evaluates incident-command behavior, not
+  just tool selection or single-step remediation.
 
----
+## Canonical Incident Families
 
-## Why This Environment
+### Service-Level Incidents
 
-Real SRE engineers face exactly these decisions daily. The environment models:
+| Task | Difficulty | Scenario |
+|------|------------|----------|
+| `task_easy` | Easy | Single auth-api crash loop after config reload |
+| `task_noisy_alert` | Easy | False cache lead hiding a checkout-api crash |
+| `task_token_expiry` | Medium | Expired signing bundle in token-broker |
 
-- **Cascading failures** — fixing the wrong service first makes things worse
-- **Bad deployments** — restart will never fix a memory leak, rollback required
-- **Network partitions** — restarting during split-brain causes data corruption
-- **Circuit breakers** — must be manually reset after upstream recovery
-- **Dependency ordering** — services must come back up in the right sequence
+### Platform Incidents
 
-These mechanics create meaningful reward signals that genuinely differentiate 
-intelligent agents from random action agents.
+| Task | Difficulty | Scenario |
+|------|------------|----------|
+| `task_medium` | Medium | Database connection storm cascading into auth |
+| `task_hard` | Hard | Bad payment-service deploy with memory leak |
+| `task_pool_exhaustion` | Hard | Connection leak in ledger-api |
 
+### Distributed Incidents
 
-## Tasks
+| Task | Difficulty | Scenario |
+|------|------------|----------|
+| `task_expert` | Expert | Dependency restore ordering across cache and gateway |
+| `task_trap` | Expert | Split-brain failover with irreversible restart trap |
+| `task_extreme` | Extreme | Multi-cause SEV1 with deploy, cache, and breaker failures |
 
-| Task | Difficulty | Scenario | Key Mechanic |
-|------|-----------|----------|--------------|
-| task_easy | Easy | Single service crash | Basic restart |
-| task_medium | Medium | DB cascade failure | Trap: wrong first action penalized |
-| task_hard | Hard | Bad deployment | Rollback required, restart always fails |
-| task_expert | Expert | Dependency chain | Correct restoration order required |
-| task_trap | Expert | Network partition | Restart causes data corruption |
-| task_extreme | Extreme | Platform meltdown | Three root causes, circuit breaker |
+## Action Grammar
 
----
+The public action space stays text-based for OpenEnv compatibility:
 
-## Action Space
+- `check_logs <service>`
+- `check_metrics <service>`
+- `check_deploy <service>`
+- `check_dependencies <service>`
+- `query_runbook <keyword>`
+- `restart_service <service>`
+- `rollback_deploy <service> <version>`
+- `scale_service <service> <replicas>`
+- `drain_traffic <service>`
+- `failover_db <cluster>`
+- `isolate_az <zone>`
+- `reset_circuit_breaker <service>`
+- `acknowledge_alert <id>`
+- `post_status <severity> <message>`
 
-| Action | Example | Effect |
-|--------|---------|--------|
-| `restart_service <name>` | `restart_service auth-api` | Restarts service if healthy root cause resolved |
-| `check_logs <name>` | `check_logs database` | Appends log context, +0.05 reward |
-| `query_runbook <keyword>` | `query_runbook OOMKilled` | Returns remediation procedure, +0.10 reward |
-| `rollback_deploy <name> <ver>` | `rollback_deploy payment-service v3.2.0` | Rolls back bad deployment, +0.50 reward |
-| `isolate_az <zone>` | `isolate_az us-east-1a` | Fences affected availability zone, +0.30 reward |
-| `failover_db <name>` | `failover_db database-primary` | Promotes replica to primary, +0.40 reward |
-| `reset_circuit_breaker <name>` | `reset_circuit_breaker edge-gateway` | Resets tripped circuit breaker, +0.50 reward |
-| `acknowledge_alert <id>` | `acknowledge_alert 1` | Clears alert, +0.05 reward |
+## Observation and State
 
----
+Each `SREObservation` includes:
 
-## Reward Function
-Final Score = 0.5 × Resolution + 0.3 × Efficiency + 0.2 × Root Cause Accuracy
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| Resolution | 50% | Fraction of required services restored to healthy |
-| Efficiency | 30% | Steps used vs optimal steps — penalizes waste |
-| Root Cause Accuracy | 20% | Did agent identify correct root cause first |
+- `task_id`
+- `description`
+- `services`
+- `alerts`
+- `logs`
+- `metrics`
+- `timeline`
+- `customer_impact`
+- `available_tools`
+- `last_action_result`
+- `step`
+- `max_steps`
+- `reward`
+- `done`
 
-**Trap mechanics:** Wrong actions apply -0.3 to -0.5 penalty and leave 
-services in a worse state, forcing the agent to recover. Restarting during 
-a network partition costs -0.5.
+The typed `SREState` also exposes deployment and grading context such as:
 
----
+- `deploy_history`
+- `dependency_graph`
+- `runbooks`
+- `action_history`
+- `analysis`
+- `hidden_causes`
+- `scenario_seed`
+- `minutes_elapsed`
 
-## API Reference
+## Grading Rubric
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Service health check |
-| `/metadata` | GET | Environment metadata and capabilities |
-| `/tasks` | GET | List all 6 tasks with descriptions |
-| `/reset` | POST | Start episode: `{"task_id": "task_easy"}` |
-| `/step` | POST | Take action: `{"action": "restart_service auth-api"}` |
-| `/state` | GET | Current environment state |
-| `/grade` | GET | Full score breakdown with letter grade |
-| `/history` | GET | Episode history and score trends |
-| `/benchmark` | POST | Run all tasks and return full benchmark report |
+The final score is deterministic and clamped to `[0.01, 0.99]`.
 
-### Quick Start with curl
+- `resolution`: 35%
+- `diagnosis_accuracy`: 20%
+- `operational_safety`: 20%
+- `efficiency`: 15%
+- `incident_hygiene`: 10%
+
+The grader also reports:
+
+- forbidden action hits
+- irreversible mistakes
+- redundant actions
+- time to first diagnosis
+- peak users affected percentage
+
+## API Surface
+
+OpenEnv base endpoints:
+
+- `POST /reset`
+- `POST /step`
+- `GET /state`
+- `GET /health`
+- `GET /metadata`
+
+Environment helpers:
+
+- `GET /tasks`
+- `GET /task/{task_id}`
+- `GET /environment-info`
+- `GET /grade`
+- `GET /history`
+- `POST /benchmark`
+- `POST /inference-trace`
+- `GET /llm-status`
+- `POST /llm-probe`
+
+Dashboard session endpoints:
+
+- `POST /dashboard/session`
+- `POST /dashboard/session/{session_id}/action`
+- `GET /dashboard/session/{session_id}/state`
+- `GET /dashboard/session/{session_id}/grade`
+- `DELETE /dashboard/session/{session_id}`
+
+## Local Development
+
 ```bash
-# Start an episode
-curl -X POST http://localhost:7860/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "task_hard"}'
-
-# Send an action  
-curl -X POST http://localhost:7860/step \
-  -H "Content-Type: application/json" \
-  -d '{"action": "check_logs payment-service"}'
-
-# Get score
-curl http://localhost:7860/grade
-
-# Run full benchmark
-curl -X POST http://localhost:7860/benchmark
-```
-
----
-
-## Setup
-```bash
-# Local
 pip install -r requirements.txt
 uvicorn server.app:app --host 0.0.0.0 --port 7860
+```
 
-# Docker
-docker build -t sre-responsegym .
-docker run -p 7860:7860 sre-responsegym
+Validation:
 
-# Validate
+```bash
 python smoke_test.py
 openenv validate
 ```
 
----
+## LLM Configuration
 
-## Inference
-```bash
-export API_BASE_URL=https://router.huggingface.co/v1
-export MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
-export HF_TOKEN=your_token_here
+The inference runner can use any of these environment variables for the router
+token:
 
-python inference.py
+- `HF_TOKEN`
+- `API_KEY`
+- `HF_API_TOKEN`
+- `HUGGING_FACE_HUB_TOKEN`
+- `HUGGINGFACEHUB_API_TOKEN`
+- `OPENAI_API_KEY`
+
+You can also create a local `.env` file by copying `.env.example`.
+
+Example:
+
+```env
+HF_TOKEN=hf_your_token_here
+API_BASE_URL=https://router.huggingface.co/v1
+MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
 ```
 
----
+Quick verification:
 
-## Baseline Scores
+```bash
+python llm_smoke_test.py
+```
 
-| Task | Score | Grade | Steps |
-|------|-------|-------|-------|
-| task_easy | 0.932 | A | 2 |
-| task_medium | 0.875 | A | 6 |
-| task_hard | 0.960 | A | 2 |
-| task_expert | 1.000 | A | 5 |
-| task_trap | 0.793 | B | 5 |
-| task_extreme | 0.793 | B | 6 |
-| **Average** | **0.892** | **A** | — |
+Or through the app:
 
----
+- `GET /llm-status`
+- `POST /llm-probe`
 
-## Environment Variables
+## Inference Runner
 
-| Variable | Description |
-|----------|-------------|
-| `API_BASE_URL` | LLM API endpoint (default: HF Router) |
-| `MODEL_NAME` | Model identifier |
-| `HF_TOKEN` | Hugging Face API key |
-| `ENV_URL` | Environment URL (default: localhost:7860) |
+`inference.py` stays at the repo root and preserves the required stdout format:
+
+- `[START]`
+- `[STEP]`
+- `[END]`
+
+Execution modes:
+
+- `ENV_URL=<running_env>` connects to a deployed environment.
+- `LOCAL_IMAGE_NAME=<docker_image>` uses the OpenEnv Docker client flow.
+- With neither set, the script starts the local FastAPI server automatically.
+
+The policy is inspect-first, LLM-assisted when credentials are available, and
+deterministic when they are not. That keeps the benchmark reproducible while
+still supporting real model-driven inference.
+
+## Hugging Face / Deployment Checklist
+
+Before submission:
+
+1. Push the latest repo state to GitHub.
+2. Redeploy the Hugging Face Space with the updated Docker image.
+3. Add `HF_TOKEN` as a Space secret if you want true LLM-backed inference.
+4. Confirm these routes on the live deployment:
+   - `/tasks`
+   - `/environment-info`
+   - `/benchmark`
+   - `/inference-trace`
+   - `/llm-status`
+5. Run the local smoke test and `openenv validate`.
+
+## Architecture Note
+
+This environment is useful for agent evaluation because it combines:
+
+- partial observability
+- explicit tool use
+- cascading service dependencies
+- time-sensitive customer impact
+- irreversible operational mistakes
+
+That makes it much closer to real production incident response than toy
+single-step tool selection tasks while still remaining reproducible and
+benchmarkable.

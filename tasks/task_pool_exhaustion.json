@@ -1,0 +1,163 @@
+{
+  "task_id": "task_pool_exhaustion",
+  "difficulty": "hard",
+  "family": "platform",
+  "title": "Connection Leak in Ledger API",
+  "description": "ledger-api is exhausting database connections because a fresh release leaked pooled clients. This one needs evidence gathering, status communication, and rollback instead of scaling blindly.",
+  "incident_commander_brief": "SEV2 ledger writes are timing out. Database capacity is fine, but ledger-api keeps consuming every available connection.",
+  "max_steps": 10,
+  "diagnosis_actions": [
+    "check_metrics ledger-api",
+    "check_deploy ledger-api",
+    "check_logs ledger-api"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 1
+  },
+  "success_criteria": {
+    "required_services": [
+      "ledger-api",
+      "billing-worker"
+    ],
+    "required_actions": [
+      "acknowledge_alert 551",
+      "post_status major rolling back ledger-api connection leak",
+      "rollback_deploy ledger-api v2.4.1"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 551",
+    "check_metrics ledger-api",
+    "check_deploy ledger-api",
+    "check_logs ledger-api",
+    "post_status major rolling back ledger-api connection leak",
+    "rollback_deploy ledger-api v2.4.1"
+  ],
+  "initial_state": {
+    "services": {
+      "billing-worker": {
+        "status": "degraded",
+        "dependencies": [
+          "ledger-api"
+        ],
+        "az": "us-east-1",
+        "current_version": "v1.7.0",
+        "stable_version": "v1.7.0",
+        "replicas": 6,
+        "desired_replicas": 6,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "ledger-api": {
+        "status": "degraded",
+        "dependencies": [
+          "ledger-db"
+        ],
+        "az": "us-east-1",
+        "current_version": "v2.4.9",
+        "stable_version": "v2.4.1",
+        "replicas": 5,
+        "desired_replicas": 5,
+        "traffic": "live"
+      },
+      "ledger-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-east-1",
+        "current_version": "14.3",
+        "stable_version": "14.3",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      }
+    },
+    "alerts": [
+      {
+        "id": 551,
+        "severity": "critical",
+        "service": "ledger-api",
+        "message": "ledger-api exhausted database client pool"
+      }
+    ],
+    "metrics": {
+      "billing-worker": {
+        "latency_ms": 720,
+        "error_rate_pct": 16.4,
+        "queue_depth": 58
+      },
+      "ledger-api": {
+        "latency_ms": 1680,
+        "error_rate_pct": 49.2,
+        "connections_used": 300,
+        "connections_limit": 300,
+        "memory_pct": 83.0
+      },
+      "ledger-db": {
+        "latency_ms": 46,
+        "error_rate_pct": 0.6,
+        "connections_used": 280,
+        "connections_limit": 600
+      }
+    },
+    "customer_impact": {
+      "severity": "sev2",
+      "users_affected_pct": 37.0,
+      "revenue_risk_per_min": 2950,
+      "error_budget_burn_rate": 6.8
+    },
+    "logs": [
+      "[ALERT] billing-worker queue depth rising because ledger-api times out."
+    ],
+    "deploy_history": {
+      "ledger-api": [
+        "2026-04-11T08:12Z v2.4.9 rollout completed",
+        "2026-04-10T18:40Z v2.4.1 marked stable"
+      ]
+    },
+    "dependency_graph": {
+      "billing-worker": [
+        "billing-worker -> ledger-api -> ledger-db"
+      ]
+    },
+    "runbooks": {
+      "connection-leak": "If one service consumes all pooled clients while the database remains healthy, rollback the leaking release."
+    },
+    "evidence": {
+      "logs": {
+        "ledger-api": [
+          "[ERROR] leased connections not returned after request completion",
+          "[WARN] leak introduced with ORM patch from v2.4.9"
+        ]
+      }
+    }
+  },
+  "hidden_causes": [
+    {
+      "id": "ledger_connection_leak",
+      "type": "connection_leak",
+      "service": "ledger-api",
+      "affected_services": [
+        "ledger-api",
+        "billing-worker"
+      ],
+      "summary": "Rollback ledger-api to v2.4.1 to remove the client leak.",
+      "impact": 0.73,
+      "fix_action": "rollback_deploy ledger-api v2.4.1",
+      "prerequisite_actions": [
+        "check_metrics ledger-api",
+        "check_logs ledger-api"
+      ],
+      "unsafe_actions": [
+        {
+          "action": "scale_service ledger-api 8",
+          "service": "ledger-api",
+          "resulting_status": "degraded",
+          "consequence": "Scaled the leaking service, which increased database connection churn without fixing the leak."
+        }
+      ],
+      "resolution_log": "ledger-api rolled back to the stable ORM release and connection usage normalized."
+    }
+  ]
+}

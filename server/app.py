@@ -1,341 +1,261 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-import json
 import sys
-import os
+from pathlib import Path
+from threading import Lock
+from uuid import uuid4
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
-from server.environment import IncidentEnv
-from server.grader import Grader
-from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from openenv.core.env_server import create_fastapi_app
+from pydantic import BaseModel
 
-app = FastAPI(title="SRE-ResponseGym", version="1.0.0")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from models import SREAction, SREObservation
+from server.environment import SREResponseGymEnvironment
+from inference import llm_status, probe_llm, run_trace
+
+
+app = create_fastapi_app(SREResponseGymEnvironment, SREAction, SREObservation)
 app.mount("/static", StaticFiles(directory="static"), name="static")
-env = IncidentEnv()
-current_task_data = {}
 
-# -------------------------
-# OPENENV TYPED MODELS
-# -------------------------
-class Action(BaseModel):
+
+DASHBOARD_SESSIONS: dict[str, SREResponseGymEnvironment] = {}
+DASHBOARD_LOCK = Lock()
+
+
+class DashboardResetRequest(BaseModel):
+    task_id: str = "task_easy"
+    scenario_seed: int | None = None
+
+
+class DashboardActionRequest(BaseModel):
     action: str
 
-class Observation(BaseModel):
-    task_id: str
-    description: str
-    services: dict
-    alerts: list
-    logs: list
-    step: int
-    max_steps: int
 
-class Reward(BaseModel):
-    reward: float
-    done: bool
-    info: dict
+def _neutral_grade() -> dict:
+    return {
+        "final_score": 0.5,
+        "letter_grade": "C",
+        "breakdown": {
+            "resolution": 0.5,
+            "diagnosis_accuracy": 0.5,
+            "operational_safety": 0.5,
+            "efficiency": 0.5,
+            "incident_hygiene": 0.5,
+        },
+        "analysis": {},
+        "actions_taken": [],
+        "steps_used": 0,
+        "max_steps": 0,
+    }
 
-class StepResponse(BaseModel):
-    observation: Observation
-    reward: float
-    done: bool
-    info: dict
 
-class ResetRequest(BaseModel):
-    task_id: Optional[str] = "task_easy"
+def _task_summary(task: dict) -> dict:
+    return {
+        "task_id": task["task_id"],
+        "title": task.get("title", task["task_id"]),
+        "difficulty": task.get("difficulty", "unknown"),
+        "family": task.get("family", "unknown"),
+        "description": task.get("description", ""),
+        "max_steps": task.get("max_steps", 0),
+        "solution_length": len(task.get("solution_actions", [])),
+    }
 
-class StepRequest(BaseModel):
-    action: str
 
-# -------------------------
-# ROUTES
-# -------------------------
+def _require_task(task_id: str) -> dict:
+    try:
+        return SREResponseGymEnvironment.load_task(task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown task '{task_id}'.") from exc
+
+
+def _get_dashboard_env(session_id: str) -> SREResponseGymEnvironment:
+    with DASHBOARD_LOCK:
+        env = DASHBOARD_SESSIONS.get(session_id)
+    if env is None:
+        raise HTTPException(status_code=404, detail="Dashboard session not found.")
+    return env
+
+
 @app.get("/")
 def root():
     return FileResponse("static/index.html")
 
-@app.post("/reset")
-def reset(request: ResetRequest = ResetRequest()):
-    global current_task_data
-    observation = env.reset(request.task_id)
-
-    with open(f"tasks/{request.task_id}.json") as f:
-        current_task_data = json.load(f)
-
-    return {
-        "observation": observation,
-        "message": f"Episode started for {request.task_id}"
-    }
-
-@app.post("/step")
-def step(request: StepRequest):
-    if env.current_task is None:
-        raise HTTPException(status_code=400, detail="Call /reset first.")
-    result = env.step(request.action)
-    # Ensure reward never hits exactly 0.0 or 1.0
-    result["reward"] = round(max(0.001, min(0.999, float(result["reward"]))), 3)
-    return result
-
-@app.get("/state")
-def state():
-    if env.current_task is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Environment not initialised. Call /reset first."
-        )
-    return env.state()
-
-@app.get("/grade")
-def grade():
-    if env.current_task is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Environment not initialised. Call /reset first."
-        )
-
-    grader = Grader(current_task_data)
-    result = grader.grade(
-        final_services=env.state_data["services"],
-        action_history=env.action_history,
-        step_count=env.step_count
-    )
-    return result
 
 @app.get("/tasks")
 def list_tasks():
+    return {"tasks": [_task_summary(task) for task in SREResponseGymEnvironment.task_catalog()]}
+
+
+@app.get("/environment-info")
+def environment_info():
+    env = SREResponseGymEnvironment()
+    metadata = env.get_metadata()
     return {
-        "tasks": [
-            {
-                "task_id": "task_easy",
-                "difficulty": "easy",
-                "description": "Single service crash. Identify and restart."
-            },
-            {
-                "task_id": "task_medium",
-                "difficulty": "medium",
-                "description": "Database cascade failure. Trace root cause."
-            },
-            {
-                "task_id": "task_hard",
-                "difficulty": "hard",
-                "description": "Bad deployment with memory leak. Rollback required."
-            },
-            {
-                "task_id": "task_expert",
-                "difficulty": "expert",
-                "description": "Multi-service cascade. Fix in correct dependency order."
-            },
-            {
-                "task_id": "task_trap",
-                "difficulty": "expert",
-                "description": "Network partition. Restarting causes data corruption."
-            },
-            {
-                "task_id": "task_extreme",
-                "difficulty": "extreme",
-                "description": "Full platform meltdown. Three independent root causes."
-            }
-        ]
+        "name": metadata.name,
+        "version": metadata.version,
+        "description": metadata.description,
+        "domain": "Site Reliability Engineering",
+        "supports_concurrent_sessions": SREResponseGymEnvironment.SUPPORTS_CONCURRENT_SESSIONS,
+        "total_tasks": len(SREResponseGymEnvironment.TASK_ORDER),
+        "available_tools": list(SREResponseGymEnvironment.AVAILABLE_TOOLS),
+        "grading_axes": {
+            "resolution": 0.35,
+            "diagnosis_accuracy": 0.20,
+            "operational_safety": 0.20,
+            "efficiency": 0.15,
+            "incident_hygiene": 0.10,
+        },
+        "families": ["service-level", "platform", "distributed"],
     }
-    
-# -------------------------
-# BENCHMARK RUNNER
-# -------------------------
+
+
+@app.get("/task/{task_id}")
+def get_task(task_id: str):
+    task = _require_task(task_id)
+    return {
+        "task": _task_summary(task),
+        "incident_commander_brief": task.get("incident_commander_brief", ""),
+        "diagnosis_actions": task.get("diagnosis_actions", []),
+        "hygiene_expectations": task.get("hygiene_expectations", {}),
+    }
+
+
+@app.get("/grade")
+def grade():
+    env = SREResponseGymEnvironment.snapshot_env()
+    if env is None or env.current_task is None:
+        return _neutral_grade()
+    return env.get_grade()
+
+
+@app.get("/history")
+def get_history():
+    return SREResponseGymEnvironment.history_summary()
+
+
 @app.post("/benchmark")
 def run_benchmark():
-    tasks = [
-        "task_easy", "task_medium", "task_hard",
-        "task_expert", "task_trap", "task_extreme"
-    ]
-
-    OPTIMAL_SEQUENCES = {
-        "task_easy": [
-            "check_logs auth-api",
-            "restart_service auth-api"
-        ],
-        "task_medium": [
-            "check_logs database",
-            "restart_service database",
-            "check_logs auth-api",
-            "restart_service auth-api",
-            "check_logs web-frontend",
-            "restart_service web-frontend"
-        ],
-        "task_hard": [
-            "check_logs payment-service",
-            "rollback_deploy payment-service v3.2.0"
-        ],
-        "task_expert": [
-            "check_logs user-service",
-            "restart_service user-service",
-            "check_logs order-service",
-            "restart_service order-service",
-            "restart_service edge-gateway"
-        ],
-        "task_trap": [
-            "query_runbook split-brain",
-            "isolate_az us-east-1a",
-            "failover_db database-primary",
-            "restart_service user-service",
-            "restart_service payment-gateway"
-        ],
-        "task_extreme": [
-            "check_logs user-service",
-            "query_runbook OOMKilled",
-            "rollback_deploy user-service v4.0.8",
-            "check_logs payment-service",
-            "rollback_deploy payment-service v2.3.0",
-            "reset_circuit_breaker edge-gateway"
-        ]
-    }
-
     results = []
     total_score = 0.0
 
-    for task_id in tasks:
-        try:
-            task_file = f"tasks/{task_id}.json"
-            with open(task_file) as f:
-                task_data = json.load(f)
+    for task in SREResponseGymEnvironment.task_catalog():
+        task_id = task["task_id"]
+        env = SREResponseGymEnvironment()
+        env.reset(task_id=task_id, scenario_seed=0)
 
-            # Reset the environment
-            env.reset(task_id)
+        for action_str in task.get("solution_actions", []):
+            obs = env.step(SREAction(action=action_str))
+            if obs.done:
+                break
 
-            # Play through optimal sequence
-            actions = OPTIMAL_SEQUENCES.get(task_id, [])
-            for action in actions:
-                result = env.step(action)
-                if result.get("done"):
-                    break
-
-            # Grade the completed episode
-            grader = Grader(task_data)
-            grade = grader.grade(
-                final_services=env.state_data["services"],
-                action_history=env.action_history,
-                step_count=env.step_count
-            )
-
-            results.append({
+        grade_payload = env.get_grade()
+        total_score += grade_payload["final_score"]
+        results.append(
+            {
                 "task_id": task_id,
-                "difficulty": task_data.get("difficulty", "unknown"),
-                "score": grade["final_score"],
-                "letter_grade": grade["letter_grade"],
-                "breakdown": grade["breakdown"],
-                "analysis": grade["analysis"],
-                "steps_used": env.step_count
-            })
-            total_score += grade["final_score"]
+                "title": task.get("title", task_id),
+                "difficulty": task.get("difficulty", "unknown"),
+                "family": task.get("family", "unknown"),
+                "score": grade_payload["final_score"],
+                "letter_grade": grade_payload["letter_grade"],
+                "breakdown": grade_payload["breakdown"],
+                "steps_used": env.step_count,
+                "max_steps": task.get("max_steps", 0),
+            }
+        )
 
-        except Exception as e:
-            results.append({
-                "task_id": task_id,
-                "difficulty": "unknown",
-                "score": 0.0,
-                "letter_grade": "F",
-                "error": str(e)
-            })
-
-    avg = round(total_score / len(tasks), 3)
-
+    task_count = max(len(results), 1)
+    average_score = round(total_score / task_count, 3)
+    overall_grade = (
+        "A" if average_score >= 0.90 else
+        "B" if average_score >= 0.75 else
+        "C" if average_score >= 0.50 else "F"
+    )
     return {
         "benchmark": "SRE-ResponseGym",
-        "version": "1.0.0",
-        "total_tasks": len(tasks),
-        "average_score": avg,
-        "overall_grade": (
-            "A" if avg >= 0.9 else
-            "B" if avg >= 0.75 else
-            "C" if avg >= 0.5 else "F"
-        ),
-        "results": results
+        "version": "2.0.0",
+        "total_tasks": task_count,
+        "average_score": average_score,
+        "overall_grade": overall_grade,
+        "results": results,
     }
 
-# -------------------------
-# EPISODE HISTORY
-# -------------------------
-@app.get("/history")
-def get_history():
+
+@app.post("/inference-trace")
+def inference_trace():
+    trace = run_trace(SREResponseGymEnvironment)
+    return {
+        "benchmark": "sre-responsegym",
+        "version": "2.0.0",
+        "task_count": len(trace["results"]),
+        "average_score": trace["average_score"],
+        "used_llm": trace["used_llm"],
+        "lines": trace["lines"],
+        "results": trace["results"],
+    }
+
+
+@app.get("/llm-status")
+def get_llm_status():
+    return llm_status()
+
+
+@app.post("/llm-probe")
+def post_llm_probe():
+    return probe_llm()
+
+
+@app.post("/dashboard/session")
+def dashboard_reset(request: DashboardResetRequest):
+    _require_task(request.task_id)
+    env = SREResponseGymEnvironment()
+    observation = env.reset(task_id=request.task_id, scenario_seed=request.scenario_seed)
+    session_id = str(uuid4())
+    with DASHBOARD_LOCK:
+        DASHBOARD_SESSIONS[session_id] = env
+    return {"session_id": session_id, "observation": observation.model_dump()}
+
+
+@app.post("/dashboard/session/{session_id}/action")
+def dashboard_step(session_id: str, request: DashboardActionRequest):
+    env = _get_dashboard_env(session_id)
+    observation = env.step(SREAction(action=request.action))
+    payload = {
+        "observation": observation.model_dump(),
+        "reward": observation.reward,
+        "done": observation.done,
+    }
+    if observation.done:
+        payload["grade"] = env.get_grade()
+    return payload
+
+
+@app.get("/dashboard/session/{session_id}/state")
+def dashboard_state(session_id: str):
+    env = _get_dashboard_env(session_id)
+    return env.state.model_dump()
+
+
+@app.get("/dashboard/session/{session_id}/grade")
+def dashboard_grade(session_id: str):
+    env = _get_dashboard_env(session_id)
     if env.current_task is None:
-        return {"episodes": [], "total": 0}
-
-    by_task = {}
-    for ep in env.episode_history:
-        tid = ep["task_id"]
-        if tid not in by_task:
-            by_task[tid] = []
-        by_task[tid].append({
-            "episode_id": ep["episode_id"],
-            "score": ep["score"],
-            "steps": ep["steps"],
-            "breakdown": ep["breakdown"]
-        })
-
-    return {
-        "total_episodes": len(env.episode_history),
-        "by_task": by_task,
-        "recent": env.episode_history[-10:]
-    }
+        return _neutral_grade()
+    return env.get_grade()
 
 
-# -------------------------
-# SMOKE TEST ENDPOINT
-# -------------------------
-@app.get("/health")
-def health():
-    return {
-        "status": "healthy",
-        "environment": "SRE-ResponseGym",
-        "version": "1.0.0",
-        "tasks_available": 6,
-        "endpoints": [
-            "/reset", "/step", "/state", "/grade",
-            "/tasks", "/benchmark", "/history", "/health"
-        ]
-    }
+@app.delete("/dashboard/session/{session_id}")
+def dashboard_close(session_id: str):
+    with DASHBOARD_LOCK:
+        existed = DASHBOARD_SESSIONS.pop(session_id, None)
+    return {"closed": existed is not None, "session_id": session_id}
 
-
-# -------------------------
-# ENVIRONMENT METADATA
-# -------------------------
-@app.get("/metadata")
-def metadata():
-    return {
-        "name": "SRE-ResponseGym",
-        "version": "1.0.0",
-        "description": "AI Incident Response Benchmark Environment",
-        "domain": "Site Reliability Engineering",
-        "total_tasks": 6,
-        "difficulty_levels": ["easy", "medium", "hard", "expert", "extreme"],
-        "action_space": [
-            "restart_service <name>",
-            "check_logs <name>",
-            "query_runbook <keyword>",
-            "rollback_deploy <name> <version>",
-            "acknowledge_alert <id>",
-            "isolate_az <zone>",
-            "failover_db <name>",
-            "reset_circuit_breaker <name>"
-        ],
-        "reward_range": [-1.0, 1.0],
-        "grading_axes": {
-            "resolution": "50% — were all required services restored",
-            "efficiency": "30% — how quickly was it solved",
-            "root_cause_accuracy": "20% — was the correct root cause identified first"
-        },
-        "special_mechanics": [
-            "Trap actions that penalize obvious-but-wrong decisions",
-            "Rollback mechanic for bad deployments",
-            "Network partition isolation and database failover",
-            "Circuit breaker reset for cascading failures",
-            "Dependency ordering requirements"
-        ]
-    }
 
 def main():
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=7860)
 
 

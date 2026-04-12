@@ -1,70 +1,210 @@
 {
-    "task_id": "task_trap",
-    "difficulty": "expert",
-    "description": "Network partition detected. Restarting any service will cause data corruption. You must isolate the affected availability zone and trigger a database failover.",
-    "initial_state": {
-        "services": {
-            "user-service": "degraded",
-            "payment-gateway": "degraded",
-            "database-primary": "unreachable",
-            "database-replica": "healthy",
-            "edge-gateway": "healthy",
-            "cache": "healthy"
-        },
-        "alerts": [
-            {
-                "id": 1,
-                "severity": "critical",
-                "message": "database-primary is unreachable from us-east-1a"
-            },
-            {
-                "id": 2,
-                "severity": "critical",
-                "message": "user-service reporting split-brain condition"
-            },
-            {
-                "id": 3,
-                "severity": "critical",
-                "message": "payment-gateway transactions failing due to DB write errors"
-            }
-        ],
-        "logs": [
-            "network: us-east-1a availability zone experiencing partial partition",
-            "database-primary: cannot reach quorum — split-brain risk detected",
-            "database-replica: healthy and replication lag is 0ms — ready for promotion",
-            "user-service: write operations failing — awaiting stable DB connection",
-            "payment-gateway: transaction commits failing — DB primary unreachable",
-            "runbook: DO NOT restart services during network partition — causes data corruption",
-            "runbook: correct procedure is isolate_az(us-east-1a) then failover_db(database-primary)"
-        ],
-        "runbook": {
-            "split-brain": "During a network partition never restart services. Isolate the affected AZ first, then promote the replica using failover_db.",
-            "network-partition": "Use isolate_az to fence the affected zone, then failover_db to promote the healthy replica. Only then restart dependent services.",
-            "data-corruption": "Restarting services during split-brain causes conflicting writes. Always isolate first."
-        },
-        "step_count": 0
-    },
-    "max_steps": 10,
-    "correct_root_cause": "network-partition-us-east-1a",
-    "solution_actions": [
-        "query_runbook split-brain",
-        "isolate_az us-east-1a",
-        "failover_db database-primary",
-        "restart_service user-service",
-        "restart_service payment-gateway"
+  "task_id": "task_trap",
+  "difficulty": "expert",
+  "family": "distributed",
+  "title": "Regional Split-Brain Failover",
+  "description": "A database cluster is in split-brain during an AZ partition. Restarting services before fencing the bad zone causes corruption. Isolate first, fail over cleanly, then restore traffic.",
+  "incident_commander_brief": "SEV1 checkout outage. us-east-1a lost quorum and the primary database entered split-brain. Any naive restart risks serving corrupted state.",
+  "max_steps": 12,
+  "diagnosis_actions": [
+    "query_runbook split-brain",
+    "check_logs database-primary",
+    "check_dependencies payment-gateway"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 1
+  },
+  "success_criteria": {
+    "required_services": [
+      "database-primary",
+      "payment-gateway",
+      "checkout-api"
     ],
-    "trap": {
-        "wrong_action": "restart_service user-service",
-        "consequence": "restarting during partition causes split-brain writes — data corruption detected",
-        "penalty": -0.5
-    },
-    "win_condition": {
-        "all_services": [
-            "user-service",
-            "payment-gateway",
-            "database-primary"
+    "required_actions": [
+      "acknowledge_alert 701",
+      "post_status critical split-brain isolated failover underway",
+      "isolate_az us-east-1a",
+      "failover_db database-primary",
+      "restart_service payment-gateway"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 701",
+    "query_runbook split-brain",
+    "check_logs database-primary",
+    "check_dependencies payment-gateway",
+    "post_status critical split-brain isolated failover underway",
+    "isolate_az us-east-1a",
+    "failover_db database-primary",
+    "restart_service payment-gateway"
+  ],
+  "initial_state": {
+    "services": {
+      "checkout-api": {
+        "status": "degraded",
+        "dependencies": [
+          "payment-gateway"
         ],
-        "required_status": "healthy",
-        "required_action_taken": "failover_db database-primary"
+        "az": "global",
+        "current_version": "v6.2.1",
+        "stable_version": "v6.2.1",
+        "replicas": 6,
+        "desired_replicas": 6,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "payment-gateway": {
+        "status": "degraded",
+        "dependencies": [
+          "database-primary"
+        ],
+        "az": "us-east-1b",
+        "current_version": "v5.0.4",
+        "stable_version": "v5.0.4",
+        "replicas": 4,
+        "desired_replicas": 4,
+        "traffic": "live"
+      },
+      "database-primary": {
+        "status": "unreachable",
+        "dependencies": [],
+        "az": "us-east-1a",
+        "current_version": "15.1",
+        "stable_version": "15.1",
+        "replicas": 3,
+        "desired_replicas": 3,
+        "traffic": "live"
+      }
+    },
+    "alerts": [
+      {
+        "id": 701,
+        "severity": "critical",
+        "service": "database-primary",
+        "message": "split-brain detected on database-primary"
+      }
+    ],
+    "metrics": {
+      "checkout-api": {
+        "latency_ms": 920,
+        "error_rate_pct": 29.0,
+        "queue_depth": 73
+      },
+      "payment-gateway": {
+        "latency_ms": 1330,
+        "error_rate_pct": 61.0,
+        "queue_depth": 154
+      },
+      "database-primary": {
+        "latency_ms": 0,
+        "error_rate_pct": 100.0,
+        "replica_lag_ms": 2800
+      }
+    },
+    "customer_impact": {
+      "severity": "sev1",
+      "users_affected_pct": 66.0,
+      "revenue_risk_per_min": 7600,
+      "error_budget_burn_rate": 11.9
+    },
+    "logs": [
+      "[ALERT] write path stalled across checkout and payments."
+    ],
+    "deploy_history": {
+      "database-primary": [
+        "2026-04-11T08:21Z replication jitter detected in us-east-1a"
+      ]
+    },
+    "dependency_graph": {
+      "payment-gateway": [
+        "payment-gateway writes transaction state into database-primary before checkout commits."
+      ]
+    },
+    "runbooks": {
+      "split-brain": "Fence the isolated AZ before database failover. Never restart application writers while split-brain remains unresolved."
+    },
+    "evidence": {
+      "logs": {
+        "database-primary": [
+          "[CRITICAL] split-brain suspected; dual primaries observed across us-east-1a and us-east-1b",
+          "[WARN] application restarts before fencing can replay stale writes"
+        ],
+        "payment-gateway": [
+          "[WARN] upstream database unavailable; payment writes blocked"
+        ]
+      }
     }
+  },
+  "hidden_causes": [
+    {
+      "id": "az_partition",
+      "type": "network_partition",
+      "service": "database-primary",
+      "affected_services": [
+        "database-primary",
+        "payment-gateway",
+        "checkout-api"
+      ],
+      "summary": "Fence the isolated availability zone before touching the database writers.",
+      "impact": 0.88,
+      "fix_action": "isolate_az us-east-1a",
+      "prerequisite_actions": [
+        "query_runbook split-brain",
+        "check_logs database-primary"
+      ],
+      "unsafe_actions": [
+        {
+          "action": "restart_service payment-gateway",
+          "service": "payment-gateway",
+          "resulting_status": "locked",
+          "irreversible": true,
+          "consequence": "Restarted payment-gateway during split-brain and replayed stale writes into the bad zone."
+        },
+        {
+          "action": "restart_service database-primary",
+          "service": "database-primary",
+          "resulting_status": "locked",
+          "irreversible": true,
+          "consequence": "Restarted the split-brain database before fencing and corrupted cluster state."
+        }
+      ],
+      "resolution_log": "us-east-1a fenced and the split-brain write path contained."
+    },
+    {
+      "id": "db_failover",
+      "type": "failover",
+      "service": "database-primary",
+      "affected_services": [
+        "database-primary"
+      ],
+      "summary": "Fail over the database after the bad zone is isolated.",
+      "impact": 0.61,
+      "fix_action": "failover_db database-primary",
+      "prerequisite_actions": [
+        "isolate_az us-east-1a"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "database-primary failed over to the healthy zone."
+    },
+    {
+      "id": "payment_writer_recovery",
+      "type": "dependency_recovery",
+      "service": "payment-gateway",
+      "affected_services": [
+        "payment-gateway",
+        "checkout-api"
+      ],
+      "summary": "Restart payment-gateway after the database failover completes.",
+      "impact": 0.43,
+      "fix_action": "restart_service payment-gateway",
+      "prerequisite_actions": [
+        "check_dependencies payment-gateway",
+        "failover_db database-primary"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "payment-gateway restarted cleanly against the new primary."
+    }
+  ]
 }

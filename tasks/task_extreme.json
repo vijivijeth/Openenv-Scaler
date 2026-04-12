@@ -1,87 +1,281 @@
 {
-    "task_id": "task_extreme",
-    "difficulty": "extreme",
-    "description": "Full platform meltdown. Three independent root causes. Circuit breakers tripped. You must diagnose each failure independently and resolve them in the correct sequence.",
-    "initial_state": {
-        "services": {
-            "edge-gateway": "down",
-            "user-service": "down",
-            "payment-service": "down",
-            "notification-service": "degraded",
-            "database-primary": "healthy",
-            "database-replica": "healthy",
-            "cache": "degraded",
-            "message-queue": "healthy"
-        },
-        "alerts": [
-            {
-                "id": 1,
-                "severity": "critical",
-                "message": "edge-gateway circuit breaker tripped — too many upstream failures"
-            },
-            {
-                "id": 2,
-                "severity": "critical",
-                "message": "user-service OOMKilled after deployment v4.1.0"
-            },
-            {
-                "id": 3,
-                "severity": "critical",
-                "message": "payment-service database connection pool exhausted"
-            },
-            {
-                "id": 4,
-                "severity": "warning",
-                "message": "notification-service queue backing up — 4200 pending messages"
-            },
-            {
-                "id": 5,
-                "severity": "warning",
-                "message": "cache hit rate dropped to 12% — possible eviction storm"
-            }
-        ],
-        "logs": [
-            "user-service: deployment v4.1.0 introduced memory leak — OOMKilled 3 times",
-            "user-service: last stable version was v4.0.8",
-            "payment-service: connection pool at 100/100 — new connections rejected",
-            "payment-service: connections not being released — possible connection leak in v2.3.1",
-            "payment-service: last stable version was v2.3.0",
-            "edge-gateway: circuit breaker tripped after 500 failures in 60 seconds",
-            "edge-gateway: will not recover automatically — requires manual reset_circuit_breaker",
-            "deployment-controller: user-service v4.1.0 deployed 23 minutes ago",
-            "deployment-controller: payment-service v2.3.1 deployed 47 minutes ago"
-        ],
-        "runbook": {
-            "OOMKilled": "Memory leaks from bad deployments cannot be fixed by restart. Rollback to last stable version.",
-            "circuit-breaker": "Circuit breakers must be manually reset using reset_circuit_breaker after upstream issues are resolved.",
-            "connection-pool": "Connection pool exhaustion caused by code leak requires rollback, not restart.",
-            "recovery-order": "Fix upstream services first before resetting circuit breakers. Order: rollback user-service → rollback payment-service → reset_circuit_breaker edge-gateway"
-        },
-        "step_count": 0
-    },
-    "max_steps": 15,
-    "correct_root_cause": "multiple-bad-deployments",
-    "solution_actions": [
-        "check_logs user-service",
-        "query_runbook OOMKilled",
-        "rollback_deploy user-service v4.0.8",
-        "check_logs payment-service",
-        "rollback_deploy payment-service v2.3.0",
-        "reset_circuit_breaker edge-gateway"
+  "task_id": "task_extreme",
+  "difficulty": "extreme",
+  "family": "distributed",
+  "title": "Multi-Cause SEV1 Meltdown",
+  "description": "This SEV1 combines a bad deploy on user-service, a cache stampede in analytics-worker, and an open circuit on edge-gateway. Diagnose multiple contributing failures, communicate clearly, and recover in a safe sequence.",
+  "incident_commander_brief": "SEV1 platform incident. Checkout traffic is failing across regions after user-service deployed a bad build, analytics-worker saturated shared cache capacity, and edge-gateway opened its breaker.",
+  "max_steps": 14,
+  "diagnosis_actions": [
+    "check_deploy user-service",
+    "check_logs user-service",
+    "check_metrics analytics-worker",
+    "query_runbook cache-stampede"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 2
+  },
+  "success_criteria": {
+    "required_services": [
+      "user-service",
+      "analytics-worker",
+      "edge-gateway",
+      "checkout-api"
     ],
-    "trap": {
-        "wrong_action": "restart_service user-service",
-        "consequence": "user-service restarts but OOMKilled again within 2 steps due to memory leak",
-        "penalty": -0.3,
-        "max_wrong_restarts": 2
-    },
-    "win_condition": {
-        "all_services": [
-            "edge-gateway",
-            "user-service",
-            "payment-service"
+    "required_actions": [
+      "acknowledge_alert 801",
+      "post_status critical triaging multi-cause sev1 across user path and gateway",
+      "post_status major mitigation applied preparing traffic recovery",
+      "rollback_deploy user-service v4.0.8",
+      "scale_service analytics-worker 8",
+      "reset_circuit_breaker edge-gateway"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 801",
+    "check_deploy user-service",
+    "check_logs user-service",
+    "check_metrics analytics-worker",
+    "query_runbook cache-stampede",
+    "post_status critical triaging multi-cause sev1 across user path and gateway",
+    "rollback_deploy user-service v4.0.8",
+    "scale_service analytics-worker 8",
+    "post_status major mitigation applied preparing traffic recovery",
+    "reset_circuit_breaker edge-gateway"
+  ],
+  "initial_state": {
+    "services": {
+      "checkout-api": {
+        "status": "degraded",
+        "dependencies": [
+          "edge-gateway",
+          "user-service"
         ],
-        "required_status": "healthy",
-        "required_action_taken": "reset_circuit_breaker edge-gateway"
+        "az": "global",
+        "current_version": "v7.3.4",
+        "stable_version": "v7.3.4",
+        "replicas": 8,
+        "desired_replicas": 8,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "edge-gateway": {
+        "status": "degraded",
+        "dependencies": [
+          "checkout-api"
+        ],
+        "az": "global",
+        "current_version": "v9.0.1",
+        "stable_version": "v9.0.1",
+        "replicas": 10,
+        "desired_replicas": 10,
+        "traffic": "live"
+      },
+      "user-service": {
+        "status": "degraded",
+        "dependencies": [
+          "user-db",
+          "shared-cache"
+        ],
+        "az": "us-central-1",
+        "current_version": "v4.1.5",
+        "stable_version": "v4.0.8",
+        "replicas": 6,
+        "desired_replicas": 6,
+        "traffic": "live"
+      },
+      "analytics-worker": {
+        "status": "degraded",
+        "dependencies": [
+          "shared-cache"
+        ],
+        "az": "us-central-1",
+        "current_version": "v2.3.0",
+        "stable_version": "v2.3.0",
+        "replicas": 3,
+        "desired_replicas": 8,
+        "traffic": "live"
+      },
+      "shared-cache": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-central-1",
+        "current_version": "redis-7.2",
+        "stable_version": "redis-7.2",
+        "replicas": 5,
+        "desired_replicas": 5,
+        "traffic": "live"
+      },
+      "user-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-central-1",
+        "current_version": "14.4",
+        "stable_version": "14.4",
+        "replicas": 3,
+        "desired_replicas": 3,
+        "traffic": "live"
+      }
+    },
+    "alerts": [
+      {
+        "id": 801,
+        "severity": "critical",
+        "service": "edge-gateway",
+        "message": "global checkout requests failing above 60 percent"
+      },
+      {
+        "id": 802,
+        "severity": "warning",
+        "service": "analytics-worker",
+        "message": "shared-cache hot key saturation detected"
+      }
+    ],
+    "metrics": {
+      "checkout-api": {
+        "latency_ms": 1140,
+        "error_rate_pct": 47.0,
+        "queue_depth": 136
+      },
+      "edge-gateway": {
+        "latency_ms": 390,
+        "error_rate_pct": 64.0,
+        "queue_depth": 44
+      },
+      "user-service": {
+        "latency_ms": 1460,
+        "error_rate_pct": 52.0,
+        "memory_pct": 95.0,
+        "queue_depth": 160
+      },
+      "analytics-worker": {
+        "latency_ms": 890,
+        "error_rate_pct": 22.0,
+        "queue_depth": 220,
+        "memory_pct": 74.0
+      },
+      "shared-cache": {
+        "latency_ms": 32,
+        "error_rate_pct": 2.5,
+        "memory_pct": 84.0
+      }
+    },
+    "customer_impact": {
+      "severity": "sev1",
+      "users_affected_pct": 71.0,
+      "revenue_risk_per_min": 8400,
+      "error_budget_burn_rate": 13.5
+    },
+    "logs": [
+      "[ALERT] edge-gateway breaker open on checkout path.",
+      "[WARN] analytics-worker is thrashing shared-cache hot keys."
+    ],
+    "deploy_history": {
+      "user-service": [
+        "2026-04-11T08:26Z v4.1.5 rollout completed",
+        "2026-04-10T23:12Z v4.0.8 marked stable"
+      ]
+    },
+    "dependency_graph": {
+      "checkout-api": [
+        "checkout-api depends on user-service for identity and edge-gateway for admission control."
+      ],
+      "edge-gateway": [
+        "edge-gateway fronts checkout-api and opens when upstream failure budget is exhausted."
+      ],
+      "analytics-worker": [
+        "analytics-worker shares the cache tier with user-service and can starve it during hot-key storms."
+      ]
+    },
+    "runbooks": {
+      "cache-stampede": "If analytics traffic causes a cache stampede, scale workers horizontally before reopening dependent traffic gates."
+    },
+    "evidence": {
+      "logs": {
+        "user-service": [
+          "[ERROR] memory leak detected in session fanout path introduced by v4.1.5",
+          "[WARN] pod restarts did not reduce heap growth"
+        ],
+        "analytics-worker": [
+          "[WARN] hot key analytics:checkout:global exceeded local worker cache budget",
+          "[INFO] backlog clears when worker pool scales above 6 replicas"
+        ]
+      }
     }
+  },
+  "hidden_causes": [
+    {
+      "id": "user_service_bad_deploy",
+      "type": "bad_deploy",
+      "service": "user-service",
+      "affected_services": [
+        "user-service",
+        "checkout-api"
+      ],
+      "summary": "Rollback user-service to v4.0.8 to remove the memory leak from the identity path.",
+      "impact": 0.63,
+      "fix_action": "rollback_deploy user-service v4.0.8",
+      "prerequisite_actions": [
+        "check_deploy user-service",
+        "check_logs user-service"
+      ],
+      "unsafe_actions": [
+        {
+          "action": "restart_service user-service",
+          "service": "user-service",
+          "resulting_status": "degraded",
+          "consequence": "Restarted the leaking user-service build without rollback; heap pressure returned immediately."
+        }
+      ],
+      "resolution_log": "user-service rolled back to v4.0.8 and memory growth normalized."
+    },
+    {
+      "id": "analytics_cache_stampede",
+      "type": "scale_required",
+      "service": "analytics-worker",
+      "affected_services": [
+        "analytics-worker"
+      ],
+      "summary": "Scale analytics-worker to 8 replicas to disperse the hot-key storm on shared-cache.",
+      "impact": 0.42,
+      "fix_action": "scale_service analytics-worker 8",
+      "prerequisite_actions": [
+        "check_metrics analytics-worker",
+        "query_runbook cache-stampede"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "analytics-worker scaled out and the cache stampede pressure subsided."
+    },
+    {
+      "id": "gateway_breaker_trip",
+      "type": "traffic_reload",
+      "service": "edge-gateway",
+      "affected_services": [
+        "edge-gateway",
+        "checkout-api"
+      ],
+      "summary": "Reset edge-gateway only after the user path and cache pressure are stable.",
+      "impact": 0.37,
+      "fix_action": "reset_circuit_breaker edge-gateway",
+      "prerequisite_actions": [
+        "rollback_deploy user-service v4.0.8",
+        "scale_service analytics-worker 8"
+      ],
+      "unsafe_actions": [
+        {
+          "action": "reset_circuit_breaker edge-gateway",
+          "service": "edge-gateway",
+          "resulting_status": "degraded",
+          "safe_after": [
+            "rollback_deploy user-service v4.0.8",
+            "scale_service analytics-worker 8"
+          ],
+          "consequence": "Reset the edge breaker before upstream recovery; checkout traffic immediately failed again."
+        }
+      ],
+      "resolution_log": "edge-gateway resumed traffic after both upstream incidents were mitigated."
+    }
+  ]
 }

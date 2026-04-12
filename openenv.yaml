@@ -1,15 +1,15 @@
 name: SRE-ResponseGym
-version: "1.0.0"
+version: "2.0.0"
 description: >
-  An AI benchmark environment simulating real-world DevOps incident response.
-  Agents must read logs, identify root causes, and remediate production failures
-  across three tasks of increasing difficulty.
+  Deterministic SRE incident-command simulator for OpenEnv. Agents investigate
+  partial evidence, manage customer impact, avoid unsafe remediation, and
+  recover service health across nine canonical production incidents.
 tags:
   - openenv
   - sre
-  - devops
   - incident-response
-  - reinforcement-learning
+  - reliability
+  - benchmark
 api:
   reset: POST /reset
   step: POST /step
@@ -17,30 +17,42 @@ api:
 tasks:
   - id: task_easy
     difficulty: easy
-    description: Single service crash. Identify and restart the correct service.
+    description: Single auth-api crash loop after config reload.
+  - id: task_noisy_alert
+    difficulty: easy
+    description: False cache lead hiding a checkout-api crash.
+  - id: task_token_expiry
+    difficulty: medium
+    description: Expired signing bundle in token-broker.
   - id: task_medium
     difficulty: medium
-    description: Database cascade failure. Trace root cause before acting.
+    description: Database connection storm cascading into auth.
   - id: task_hard
     difficulty: hard
-    description: Bad deployment with memory leak. Rollback required, restart will fail.
+    description: Bad payment-service deploy with memory leak.
+  - id: task_pool_exhaustion
+    difficulty: hard
+    description: Connection leak in ledger-api.
   - id: task_expert
     difficulty: expert
-    description: Multi-service cascade. Must restore in correct dependency order.
+    description: Dependency restore ordering across cache and gateway.
   - id: task_trap
     difficulty: expert
-    description: Network partition. Restarting causes data corruption. Isolate and failover.
+    description: Split-brain failover with irreversible restart trap.
   - id: task_extreme
     difficulty: extreme
-    description: Full platform meltdown. Three root causes. Circuit breaker reset required.
+    description: Multi-cause SEV1 with deploy, cache, and breaker failures.
 action_space:
   type: text
   examples:
+    - check_logs auth-api
+    - check_metrics ledger-api
+    - check_deploy payment-service
+    - query_runbook split-brain
     - restart_service auth-api
-    - check_logs database
-    - query_runbook OOMKilled
-    - rollback_deploy payment-service v3.2.0
-    - acknowledge_alert 1
+    - rollback_deploy payment-service v4.1.8
+    - scale_service analytics-worker 8
+    - reset_circuit_breaker edge-gateway
 observation_space:
   type: json
   fields:
@@ -49,8 +61,13 @@ observation_space:
     - services
     - alerts
     - logs
+    - metrics
+    - timeline
+    - customer_impact
+    - available_tools
+    - last_action_result
     - step
     - max_steps
-reward_range: [-1.0, 1.0]
+reward_range: [0.01, 0.99]
 docker:
   port: 7860

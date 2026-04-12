@@ -7,7 +7,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV ENABLE_WEB_INTERFACE=true
+ENV API_BASE_URL=https://router.huggingface.co/v1
+ENV MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
 
 EXPOSE 7860
 

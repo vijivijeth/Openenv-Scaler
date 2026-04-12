@@ -1,0 +1,172 @@
+{
+  "task_id": "task_noisy_alert",
+  "difficulty": "easy",
+  "family": "service-level",
+  "title": "Noisy Cache Alert, Real Checkout Failure",
+  "description": "A warning page points at cache saturation, but the outage is actually in checkout-api. Triage the right component instead of chasing a false lead.",
+  "incident_commander_brief": "SEV3 checkout degradation. Cache warnings are firing, but completed orders dropped immediately after checkout-api rolled over onto a new node.",
+  "max_steps": 7,
+  "diagnosis_actions": [
+    "check_logs checkout-api",
+    "check_metrics checkout-api"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 0
+  },
+  "success_criteria": {
+    "required_services": [
+      "checkout-api",
+      "storefront"
+    ],
+    "required_actions": [
+      "acknowledge_alert 211",
+      "restart_service checkout-api"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 211",
+    "check_logs checkout-api",
+    "restart_service checkout-api"
+  ],
+  "initial_state": {
+    "services": {
+      "storefront": {
+        "status": "degraded",
+        "dependencies": [
+          "checkout-api"
+        ],
+        "az": "global",
+        "current_version": "v1.9.7",
+        "stable_version": "v1.9.7",
+        "replicas": 8,
+        "desired_replicas": 8,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "checkout-api": {
+        "status": "down",
+        "dependencies": [
+          "orders-db",
+          "cache-cluster"
+        ],
+        "az": "us-east-2",
+        "current_version": "v3.1.6",
+        "stable_version": "v3.1.6",
+        "replicas": 4,
+        "desired_replicas": 4,
+        "traffic": "live"
+      },
+      "cache-cluster": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-east-2",
+        "current_version": "redis-7.2",
+        "stable_version": "redis-7.2",
+        "replicas": 3,
+        "desired_replicas": 3,
+        "traffic": "live"
+      },
+      "orders-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-east-2",
+        "current_version": "14.2",
+        "stable_version": "14.2",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      }
+    },
+    "alerts": [
+      {
+        "id": 211,
+        "severity": "critical",
+        "service": "checkout-api",
+        "message": "checkout success rate below SLO"
+      },
+      {
+        "id": 212,
+        "severity": "warning",
+        "service": "cache-cluster",
+        "message": "cache memory reached 79 percent on one shard"
+      }
+    ],
+    "metrics": {
+      "storefront": {
+        "latency_ms": 520,
+        "error_rate_pct": 14.1,
+        "queue_depth": 12
+      },
+      "checkout-api": {
+        "latency_ms": 0,
+        "error_rate_pct": 91.2,
+        "queue_depth": 0
+      },
+      "cache-cluster": {
+        "latency_ms": 8,
+        "error_rate_pct": 0.3,
+        "memory_pct": 79.0
+      }
+    },
+    "customer_impact": {
+      "severity": "sev3",
+      "users_affected_pct": 22.0,
+      "revenue_risk_per_min": 1800,
+      "error_budget_burn_rate": 4.8
+    },
+    "logs": [
+      "[ALERT] checkout-api unavailable from storefront.",
+      "[WARN] cache shard memory elevated but hit ratio remains normal."
+    ],
+    "deploy_history": {
+      "checkout-api": [
+        "2026-04-11T09:04Z v3.1.6 workload rescheduled onto node use2-node-17",
+        "2026-04-11T07:10Z v3.1.6 rollout completed"
+      ]
+    },
+    "dependency_graph": {
+      "storefront": [
+        "storefront -> checkout-api -> orders-db"
+      ],
+      "checkout-api": [
+        "checkout-api uses cache-cluster for cart lookups and orders-db for writes."
+      ]
+    },
+    "runbooks": {
+      "node-eviction": "If a healthy binary lands on a bad node and dependencies are healthy, restart the workload before wider mitigation."
+    },
+    "evidence": {
+      "logs": {
+        "checkout-api": [
+          "[ERROR] process received SIGBUS after node-level disk remount",
+          "[INFO] database and cache health checks were green before crash"
+        ],
+        "cache-cluster": [
+          "[WARN] shard-2 memory elevated but eviction rate is zero",
+          "[INFO] cache hit ratio steady at 94 percent"
+        ]
+      }
+    }
+  },
+  "hidden_causes": [
+    {
+      "id": "checkout_node_crash",
+      "type": "single_crash",
+      "service": "checkout-api",
+      "affected_services": [
+        "checkout-api",
+        "storefront"
+      ],
+      "summary": "checkout-api only needs a clean restart on a healthy node.",
+      "impact": 0.52,
+      "fix_action": "restart_service checkout-api",
+      "prerequisite_actions": [
+        "check_logs checkout-api"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "checkout-api moved off the bad node and checkout traffic recovered."
+    }
+  ]
+}

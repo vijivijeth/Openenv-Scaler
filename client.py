@@ -1,47 +1,31 @@
-import requests
-from models import Action, StepResult, Observation, State
+from typing import Any, Dict
+
+from openenv.core import EnvClient
+from openenv.core.client_types import StepResult
+
+from models import SREAction, SREObservation, SREState
 
 
-class SREResponseGymClient:
+class SREResponseGymClient(EnvClient[SREAction, SREObservation, SREState]):
+    """Typed OpenEnv client for the SRE-ResponseGym environment."""
 
-    def __init__(self, base_url: str = "http://localhost:7860"):
-        self.base_url = base_url.rstrip("/")
+    def _step_payload(self, action: SREAction | Dict[str, Any] | str) -> Dict[str, Any]:
+        if isinstance(action, str):
+            return {"action": action}
+        if isinstance(action, dict):
+            return action
+        return action.model_dump()
 
-    def reset(self, task_id: str = "task_easy") -> StepResult:
-        response = requests.post(
-            f"{self.base_url}/reset",
-            json={"task_id": task_id}
-        )
-        response.raise_for_status()
-        data = response.json()
+    def _parse_result(self, payload: Dict[str, Any]) -> StepResult[SREObservation]:
+        observation_data = payload.get("observation", payload)
+        observation = SREObservation(**observation_data)
+        reward = payload.get("reward", observation.reward)
+        done = payload.get("done", observation.done)
         return StepResult(
-            observation=Observation(**data["observation"]),
-            reward=0.0,
-            done=False,
-            info={"message": data.get("message", "")}
+            observation=observation,
+            reward=reward,
+            done=done,
         )
 
-    def step(self, action: str) -> StepResult:
-        response = requests.post(
-            f"{self.base_url}/step",
-            json={"action": action}
-        )
-        response.raise_for_status()
-        data = response.json()
-        return StepResult(
-            observation=Observation(**data["observation"]),
-            reward=data["reward"],
-            done=data["done"],
-            info=data["info"]
-        )
-
-    def state(self) -> State:
-        response = requests.get(f"{self.base_url}/state")
-        response.raise_for_status()
-        data = response.json()
-        return State(**data)
-
-    def grade(self) -> dict:
-        response = requests.get(f"{self.base_url}/grade")
-        response.raise_for_status()
-        return response.json()
+    def _parse_state(self, payload: Dict[str, Any]) -> SREState:
+        return SREState(**payload)

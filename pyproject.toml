@@ -4,16 +4,18 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "sre-responsegym"
-version = "1.0.0"
-description = "AI Incident Response Benchmark Environment"
+version = "2.0.0"
+description = "Deterministic SRE incident-command benchmark for OpenEnv"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "openai",
-    "requests",
-    "openenv-core>=0.2.0",
+    "fastapi==0.135.3",
+    "uvicorn==0.42.0",
+    "pydantic==2.12.5",
+    "openai==2.30.0",
+    "requests==2.33.1",
+    "aiofiles==24.1.0",
+    "python-dotenv==1.2.2",
+    "openenv-core==0.2.3",
 ]
 
 [project.scripts]
@@ -21,6 +23,6 @@ server = "server.app:main"
 
 [tool.openenv]
 name = "SRE-ResponseGym"
-version = "1.0.0"
+version = "2.0.0"
 entry_point = "server.app:app"
 port = 7860

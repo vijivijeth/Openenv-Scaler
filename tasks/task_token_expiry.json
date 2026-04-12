@@ -1,0 +1,169 @@
+{
+  "task_id": "task_token_expiry",
+  "difficulty": "medium",
+  "family": "service-level",
+  "title": "Expired Signing Token",
+  "description": "Authentication requests are failing because token-broker is serving an expired signing bundle. Diagnose the identity path, communicate clearly, and reload the broker safely.",
+  "incident_commander_brief": "SEV2 login outage. Edge-auth is rejecting tokens across regions after the midnight secret rotation window.",
+  "max_steps": 8,
+  "diagnosis_actions": [
+    "check_logs token-broker",
+    "check_dependencies edge-auth",
+    "query_runbook oidc"
+  ],
+  "hygiene_expectations": {
+    "require_ack_critical": true,
+    "min_status_updates": 1
+  },
+  "success_criteria": {
+    "required_services": [
+      "token-broker",
+      "edge-auth",
+      "web-frontend"
+    ],
+    "required_actions": [
+      "acknowledge_alert 301",
+      "post_status major investigating token refresh failure",
+      "restart_service token-broker"
+    ],
+    "required_status": "healthy"
+  },
+  "solution_actions": [
+    "acknowledge_alert 301",
+    "check_dependencies edge-auth",
+    "query_runbook oidc",
+    "check_logs token-broker",
+    "post_status major investigating token refresh failure",
+    "restart_service token-broker"
+  ],
+  "initial_state": {
+    "services": {
+      "web-frontend": {
+        "status": "degraded",
+        "dependencies": [
+          "edge-auth"
+        ],
+        "az": "global",
+        "current_version": "v6.1.2",
+        "stable_version": "v6.1.2",
+        "replicas": 10,
+        "desired_replicas": 10,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "edge-auth": {
+        "status": "degraded",
+        "dependencies": [
+          "token-broker",
+          "user-db"
+        ],
+        "az": "global",
+        "current_version": "v4.6.0",
+        "stable_version": "v4.6.0",
+        "replicas": 6,
+        "desired_replicas": 6,
+        "traffic": "live",
+        "auto_recover": true
+      },
+      "token-broker": {
+        "status": "down",
+        "dependencies": [],
+        "az": "us-west-2",
+        "current_version": "v2.5.3",
+        "stable_version": "v2.5.3",
+        "replicas": 2,
+        "desired_replicas": 2,
+        "traffic": "live"
+      },
+      "user-db": {
+        "status": "healthy",
+        "dependencies": [],
+        "az": "us-west-2",
+        "current_version": "13.11",
+        "stable_version": "13.11",
+        "replicas": 3,
+        "desired_replicas": 3,
+        "traffic": "live"
+      }
+    },
+    "alerts": [
+      {
+        "id": 301,
+        "severity": "critical",
+        "service": "edge-auth",
+        "message": "token verification errors above 80 percent"
+      }
+    ],
+    "metrics": {
+      "web-frontend": {
+        "latency_ms": 640,
+        "error_rate_pct": 18.4
+      },
+      "edge-auth": {
+        "latency_ms": 740,
+        "error_rate_pct": 87.3,
+        "queue_depth": 48
+      },
+      "token-broker": {
+        "latency_ms": 0,
+        "error_rate_pct": 100.0
+      }
+    },
+    "customer_impact": {
+      "severity": "sev2",
+      "users_affected_pct": 39.0,
+      "revenue_risk_per_min": 3400,
+      "error_budget_burn_rate": 7.1
+    },
+    "logs": [
+      "[ALERT] edge-auth rejected signed session tokens after key rotation window.",
+      "[INFO] user-db health is normal."
+    ],
+    "deploy_history": {
+      "token-broker": [
+        "2026-04-11T00:00Z secret bundle rotated to keyset-47",
+        "2026-04-10T15:21Z v2.5.3 rollout completed"
+      ]
+    },
+    "dependency_graph": {
+      "edge-auth": [
+        "edge-auth validates sessions via token-broker and reads user metadata from user-db."
+      ]
+    },
+    "runbooks": {
+      "oidc": "After secret rotation, if token-broker serves an expired bundle, restart it to reload the new signing material from disk."
+    },
+    "evidence": {
+      "logs": {
+        "token-broker": [
+          "[ERROR] signing bundle expired at 2026-04-11T00:00:00Z",
+          "[INFO] replacement bundle present on disk but process has not reloaded it"
+        ],
+        "edge-auth": [
+          "[WARN] token issuer signature rejected; upstream bundle mismatch"
+        ]
+      }
+    }
+  },
+  "hidden_causes": [
+    {
+      "id": "expired_signing_bundle",
+      "type": "secret_expiry",
+      "service": "token-broker",
+      "affected_services": [
+        "token-broker",
+        "edge-auth",
+        "web-frontend"
+      ],
+      "summary": "Restart token-broker to reload the rotated signing bundle.",
+      "impact": 0.72,
+      "fix_action": "restart_service token-broker",
+      "prerequisite_actions": [
+        "query_runbook oidc",
+        "check_logs token-broker"
+      ],
+      "unsafe_actions": [],
+      "resolution_log": "token-broker reloaded the rotated bundle and auth traffic recovered."
+    }
+  ]
+}
