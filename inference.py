@@ -64,7 +64,7 @@ TASK_OPTIMAL_SEQUENCES = {
 
 
 def clamp_score(value: float) -> float:
-    return round(max(0.0, min(1.0, float(value))), 2)
+    return round(max(0.01, min(0.99, float(value))), 2)
 
 
 def sanitize_field(value: str | None) -> str:
@@ -480,13 +480,13 @@ def run_trace(env_factory, llm_client: OpenAI | None = None) -> dict:
 
 def failed_episode_result(task_id: str) -> dict:
     start_line = format_start_line(task_id)
-    end_line = format_end_line(False, 0, 0.0, [])
+    end_line = format_end_line(False, 0, 0.01, [])
     print(start_line, flush=True)
     print(end_line, flush=True)
     return {
         "task_id": task_id,
         "success": False,
-        "score": 0.0,
+        "score": 0.01,
         "steps": 0,
         "rewards": [],
         "lines": [start_line, end_line],
