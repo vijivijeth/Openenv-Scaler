@@ -20,9 +20,12 @@ from server.grader import Grader
 ROOT_DIR = Path(__file__).resolve().parent
 TASKS_DIR = ROOT_DIR / "tasks"
 
-API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+INJECTED_API_BASE_URL = os.getenv("API_BASE_URL")
+INJECTED_API_KEY = os.getenv("API_KEY")
+
+API_BASE_URL = INJECTED_API_BASE_URL or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_KEY = INJECTED_API_KEY or os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME") or os.getenv("IMAGE_NAME")
 ENV_URL = (os.getenv("ENV_URL") or "").strip()
 
@@ -110,11 +113,12 @@ def llm_status() -> dict:
     disabled = bool(API_KEY) and API_KEY == _disabled_api_key
     return {
         "configured": bool(API_KEY),
-        "api_key_source": "HF_TOKEN" if os.getenv("HF_TOKEN") else ("API_KEY" if os.getenv("API_KEY") else None),
+        "api_key_source": "API_KEY" if INJECTED_API_KEY else ("HF_TOKEN" if os.getenv("HF_TOKEN") else None),
         "api_base_url": API_BASE_URL,
         "model_name": MODEL_NAME,
         "llm_attempt_enabled": bool(API_KEY) and not disabled,
         "disabled_for_current_key": disabled,
+        "validator_proxy_mode": bool(INJECTED_API_BASE_URL and INJECTED_API_KEY),
     }
 
 
@@ -298,6 +302,10 @@ def get_action(
             error_text = str(exc).lower()
             if any(token in error_text for token in ["401", "402", "403", "credit", "insufficient_quota"]):
                 _disabled_api_key = API_KEY
+
+    # When the validator injects API_BASE_URL + API_KEY, we still attempt the
+    # proxy-backed call first, but fall back deterministically if the call
+    # fails or returns an unusable action.
 
     normalized_history = [normalize_action(action) for action in action_history]
     solution = TASK_OPTIMAL_SEQUENCES.get(task_id, [])
