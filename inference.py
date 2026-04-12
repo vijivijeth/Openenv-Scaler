@@ -22,6 +22,7 @@ TASKS_DIR = ROOT_DIR / "tasks"
 
 INJECTED_API_BASE_URL = os.getenv("API_BASE_URL")
 INJECTED_API_KEY = os.getenv("API_KEY")
+STRICT_PROXY_MODE = bool(INJECTED_API_BASE_URL and INJECTED_API_KEY)
 
 API_BASE_URL = INJECTED_API_BASE_URL or "https://router.huggingface.co/v1"
 MODEL_NAME = os.getenv("MODEL_NAME") or "meta-llama/Llama-3.1-8B-Instruct"
@@ -106,6 +107,11 @@ def action_prefixes(observation: SREObservation) -> list[str]:
 
 
 def build_llm_client() -> OpenAI:
+    if STRICT_PROXY_MODE:
+        return OpenAI(
+            base_url=os.environ["API_BASE_URL"],
+            api_key=os.environ["API_KEY"],
+        )
     return OpenAI(base_url=API_BASE_URL, api_key=API_KEY or "missing-key")
 
 
@@ -120,6 +126,26 @@ def llm_status() -> dict:
         "disabled_for_current_key": disabled,
         "validator_proxy_mode": bool(INJECTED_API_BASE_URL and INJECTED_API_KEY),
     }
+
+
+def warmup_llm_proxy(client: OpenAI) -> None:
+    if not STRICT_PROXY_MODE:
+        return
+
+    try:
+        client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "Reply with exactly one valid simulator action."},
+                {"role": "user", "content": "A service is down. Return one action only."},
+            ],
+            max_tokens=12,
+            temperature=0.0,
+        )
+    except Exception:
+        # The validator mainly needs to observe traffic through the injected proxy.
+        # If the warmup request fails, continue with the normal inference flow.
+        pass
 
 
 def probe_llm() -> dict:
@@ -495,6 +521,8 @@ def main() -> int:
     results = []
 
     try:
+        warmup_llm_proxy(llm_client)
+
         if not ENV_URL and not LOCAL_IMAGE_NAME:
             try:
                 server = start_local_server()
