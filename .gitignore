@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 .env.example
 validate-submission.sh
+.codex
+.agents

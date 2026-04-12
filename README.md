@@ -1,3 +1,15 @@
+---
+title: SRE-ResponseGym
+emoji: "🛠️"
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Deterministic SRE incident-command benchmark for OpenEnv.
+header: default
+---
+
 # OpenEnv SRE-ResponseGym V2
 
 SRE-ResponseGym V2 is a deterministic OpenEnv environment for evaluating agents
