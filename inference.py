@@ -223,9 +223,11 @@ def create_client(server: LocalServerHandle | None = None):
     if ENV_URL:
         return SREResponseGymClient(base_url=ENV_URL).sync()
 
-    if server is None:
-        raise RuntimeError("Local server handle is required when ENV_URL and LOCAL_IMAGE_NAME are unset.")
-    return SREResponseGymClient(base_url=server.base_url).sync()
+    if server is not None:
+        return SREResponseGymClient(base_url=server.base_url).sync()
+
+    # Fall back to direct in-process execution if no remote/docker target is available.
+    return SREResponseGymEnvironment()
 
 
 def _extract_observation(result: Any):
@@ -442,15 +444,41 @@ def run_trace(env_factory, llm_client: OpenAI | None = None) -> dict:
     }
 
 
+def failed_episode_result(task_id: str) -> dict:
+    start_line = format_start_line(task_id)
+    end_line = format_end_line(False, 0, 0.0, [])
+    print(start_line, flush=True)
+    print(end_line, flush=True)
+    return {
+        "task_id": task_id,
+        "success": False,
+        "score": 0.0,
+        "steps": 0,
+        "rewards": [],
+        "lines": [start_line, end_line],
+        "used_llm": False,
+        "end_line": end_line,
+    }
+
+
 def run_task_with_client(task_id: str, llm_client: OpenAI, server: LocalServerHandle | None = None) -> dict:
     def stdout_emit(line: str) -> None:
         print(line, flush=True)
 
-    client = create_client(server)
-    with client as env:
-        episode = run_episode_on_env(env, llm_client, task_id, emit=stdout_emit, emit_end=False)
-    print(episode["end_line"], flush=True)
-    return episode
+    try:
+        client = create_client(server)
+    except Exception:
+        return failed_episode_result(task_id)
+
+    managed = hasattr(client, "__enter__") and hasattr(client, "__exit__")
+
+    try:
+        if managed:
+            with client as env:
+                return run_episode_on_env(env, llm_client, task_id, emit=stdout_emit)
+        return run_episode_on_env(client, llm_client, task_id, emit=stdout_emit)
+    except Exception:
+        return failed_episode_result(task_id)
 
 
 def main() -> int:
@@ -460,7 +488,10 @@ def main() -> int:
 
     try:
         if not ENV_URL and not LOCAL_IMAGE_NAME:
-            server = start_local_server()
+            try:
+                server = start_local_server()
+            except Exception:
+                server = None
 
         for task_id in TASKS:
             results.append(run_task_with_client(task_id, llm_client, server))
