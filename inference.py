@@ -509,7 +509,9 @@ def run_task_with_client(task_id: str, llm_client: OpenAI, server: LocalServerHa
     try:
         if managed:
             with client as env:
-                return run_episode_on_env(env, llm_client, task_id, emit=stdout_emit)
+                episode = run_episode_on_env(env, llm_client, task_id, emit=stdout_emit, emit_end=False)
+            print(episode["end_line"], flush=True)
+            return episode
         return run_episode_on_env(client, llm_client, task_id, emit=stdout_emit)
     except Exception:
         return failed_episode_result(task_id)
