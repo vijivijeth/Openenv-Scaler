@@ -5,3 +5,4 @@ __pycache__/
 *.env
 *.egg-info/
 .env.example
+validate-submission.sh
